@@ -31,10 +31,6 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
-    const [d1Mode, setD1Mode] = useState(false);
-    const [d1Province, setD1Province] = useState("");
-    const [d1YearStart, setD1YearStart] = useState(2021);
-    const [d1YearEnd, setD1YearEnd] = useState(2026);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -83,10 +79,8 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         setIsSubmitting(true);
 
         try {
-            const apiUrl = d1Mode ? "/api/accident-chat" : "/api/chat";
-            const apiBody = d1Mode
-                ? { sessionId, prompt: trimmedMessage, province: d1Province, year_start: d1YearStart, year_end: d1YearEnd }
-                : { sessionId, prompt: trimmedMessage, history: nextMessages };
+            const apiUrl = "/api/chat";
+            const apiBody = { sessionId, prompt: trimmedMessage, history: nextMessages };
             const response = await fetch(apiUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -186,34 +180,6 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
 
     return (
         <div ref={wrapperRef} className="w-full max-w-2xl mx-auto bg-white border border-gray-100 p-2.5 rounded-2xl shadow-sm relative">
-            {/* D1 mode — province + year filters */}
-            {d1Mode && (
-                <div className="flex items-center gap-2 mb-2 px-1 flex-wrap">
-                    <span className="text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">🛣️ D1 อุบัติเหตุ</span>
-                    <input
-                        type="text"
-                        value={d1Province}
-                        onChange={(e) => setD1Province(e.target.value)}
-                        placeholder="จังหวัด (ว่าง = ทั้งเขต 10)"
-                        className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 outline-none focus:border-red-300"
-                    />
-                    <input
-                        type="number"
-                        value={d1YearStart}
-                        onChange={(e) => setD1YearStart(Number(e.target.value))}
-                        className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 outline-none focus:border-red-300"
-                        min={2020} max={2030}
-                    />
-                    <span className="text-xs text-gray-400">–</span>
-                    <input
-                        type="number"
-                        value={d1YearEnd}
-                        onChange={(e) => setD1YearEnd(Number(e.target.value))}
-                        className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-700 outline-none focus:border-red-300"
-                        min={2020} max={2030}
-                    />
-                </div>
-            )}
             {/* Popover เพิ่ม */}
             {showAddMenu && (
                 <div className="absolute bottom-18 left-2 bg-white rounded-xl shadow-lg border border-gray-100 p-2 w-56 flex flex-col gap-1 z-10 transition-all">
@@ -318,22 +284,6 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 >
                     <FiList className="text-[#db5b24]" size={14} /> 
                     <span>เครื่องมือ</span>
-                </button>
-                <button
-                    onClick={() => {
-                        setD1Mode(!d1Mode);
-                        setShowAddMenu(false);
-                        setShowToolsMenu(false);
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                        d1Mode
-                            ? 'bg-red-100 text-red-700 border border-red-200'
-                            : 'bg-[#f4f5f8] hover:bg-[#e9ebf0] text-[#334155]'
-                    }`}
-                    title="ใช้ Musya-Agent backend สำหรับข้อมูลอุบัติเหตุทางถนน"
-                >
-                    <span>🛣️</span>
-                    <span>อุบัติเหตุ D1</span>
                 </button>
             </div>
         </div>
