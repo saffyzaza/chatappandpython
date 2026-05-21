@@ -9,7 +9,7 @@ const LEFT_PANE_RAIL_WIDTH = 52;
 
 export default function ChatPage() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [leftWidth, setLeftWidth] = useState(60); // เริ่มต้นที่ 50%
+  const [leftWidth, setLeftWidth] = useState(60);
   const [isDragging, setIsDragging] = useState(false);
   const [showLeftPane, setShowLeftPane] = useState(true);
   const [showRightPane, setShowRightPane] = useState(true);
@@ -112,6 +112,11 @@ export default function ChatPage() {
           <IoCode size={14} />
         </div>
       </div>
+
+      {/* Drag overlay – blocks iframe from stealing mousemove events */}
+      {isDragging && (
+        <div className="absolute inset-0 z-20" />
+      )}
 
       {/* ฝั่งขวา */}
       <div 

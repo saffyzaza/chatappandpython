@@ -1,12 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import type { FileInsightResult } from '../insightTypes'
 import { getAllFiles, type StoredFile } from '../fileStorage'
 
-export default function ListApaPage() {
+function ListApaContent() {
   const searchParams = useSearchParams()
   const highlightedFileId = searchParams.get('fileId')
   const [files, setFiles] = useState<StoredFile[]>([])
@@ -424,5 +424,13 @@ export default function ListApaPage() {
         ) : null}
       </div>
     </main>
+  )
+}
+
+export default function ListApaPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-sm text-gray-400">กำลังโหลด...</div>}>
+      <ListApaContent />
+    </Suspense>
   )
 }

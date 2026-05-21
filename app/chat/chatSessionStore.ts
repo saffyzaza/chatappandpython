@@ -1,4 +1,4 @@
-import type { ChatSessionMessage, ChatSessionState, ChatMessageRole, AgentStep } from "./chatTypes";
+import type { ChatSessionMessage, ChatSessionState, ChatMessageRole, AgentStep, SourceFile } from "./chatTypes";
 
 const CHAT_SESSION_PREFIX = "chat-session:";
 export const CHAT_SESSION_UPDATED_EVENT = "chat-session-updated";
@@ -53,6 +53,7 @@ export function createChatSessionMessage(
   role: ChatMessageRole,
   text: string,
   agentSteps?: AgentStep[],
+  sourceFile?: SourceFile,
 ): ChatSessionMessage {
   return {
     id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -60,6 +61,7 @@ export function createChatSessionMessage(
     text,
     timestamp: formatTimestamp(),
     ...(agentSteps && agentSteps.length > 0 ? { agentSteps } : {}),
+    ...(sourceFile ? { sourceFile } : {}),
   };
 }
 
@@ -151,13 +153,13 @@ export function updateChatSessionState(
 
 export function appendChatSessionMessages(
   sessionId: string,
-  entries: Array<{ role: ChatSessionMessage["role"]; text: string; agentSteps?: AgentStep[] }>,
+  entries: Array<{ role: ChatSessionMessage["role"]; text: string; agentSteps?: AgentStep[]; sourceFile?: SourceFile }>,
 ) {
   return updateChatSessionState(sessionId, (current) => ({
     ...current,
     messages: [
       ...current.messages,
-      ...entries.map((entry) => createChatSessionMessage(entry.role, entry.text, entry.agentSteps)),
+      ...entries.map((entry) => createChatSessionMessage(entry.role, entry.text, entry.agentSteps, entry.sourceFile)),
     ],
   })).messages;
 }

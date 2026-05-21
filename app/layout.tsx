@@ -16,7 +16,7 @@ export default function RootLayout({
   const pathname = usePathname();
   const [showDatabaseExplorer, setShowDatabaseExplorer] = useState(false);
   const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/register") || pathname.startsWith("/forgot-password");
-  const shouldShowChatInput = !pathname.startsWith("/fileapa") && !isAuthPage;
+  const shouldShowChatInput = !pathname.startsWith("/fileapa") && !pathname.startsWith("/chat") && !isAuthPage;
   const shouldShowDatabasePanel = showDatabaseExplorer || pathname.startsWith("/fileapa");
 
   return (
@@ -31,7 +31,7 @@ export default function RootLayout({
           <div className="flex h-screen overflow-hidden">
             <Sidebar showDatabaseExplorer={shouldShowDatabasePanel} />
             <main className="flex flex-col flex-1 h-full w-full relative">
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 min-h-0 overflow-y-auto">
                 {children}
               </div>
               {shouldShowChatInput ? (

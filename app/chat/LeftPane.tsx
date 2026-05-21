@@ -3,7 +3,10 @@ import { useSyncExternalStore, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 
 import { createEmptyChatSessionState, getChatSessionState, subscribeToChatSession } from "./chatSessionStore";
+import { getStreamingSteps, subscribeToStreamingState } from "./streamingStore";
 import { MarkdownContent } from "../component/chat/MarkdownContent";
+import { AgentPipelinePanel } from "../component/chat/AgentPipelinePanel";
+import { ChatInput } from "../component/chat/ChatInput";
 
 const PREVIEW_SESSION = createEmptyChatSessionState("preview-session");
 
@@ -17,11 +20,21 @@ export const LeftPane = () => {
     () => PREVIEW_SESSION,
   );
 
+  // Live streaming steps
+  const liveSteps = useSyncExternalStore(
+    (onChange) => subscribeToStreamingState(sessionId, onChange),
+    () => (sessionId ? getStreamingSteps(sessionId) : null),
+    () => null,
+  );
+
+  const isRunning = session.status === "running";
+  const hasLivePipeline = isRunning && liveSteps && liveSteps.length > 0;
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session.messages.length]);
+  }, [session.messages.length, liveSteps?.length]);
 
   return (
     <div className="flex-1 h-full border-r border-gray-200 bg-white shrink-0 shadow-sm rounded-lg flex flex-col overflow-hidden">
@@ -30,30 +43,76 @@ export const LeftPane = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-        {session.messages.length === 0 ? (
+        {session.messages.length === 0 && !hasLivePipeline ? (
           <div className="h-full flex items-center justify-center">
             <p className="text-sm text-gray-400">
               {sessionId ? "เริ่มพิมพ์คำถามด้านล่างเพื่อเริ่มสนทนา" : "สร้าง session ใหม่โดยพิมพ์ข้อความในช่องแชตด้านล่าง"}
             </p>
           </div>
         ) : (
-          session.messages.map((msg) =>
-            msg.role === "user" ? (
-              <div key={msg.id} className="flex flex-col items-end">
-                <div className="bg-[#eb6f45f1] text-white px-4 py-3 rounded-2xl rounded-tr-sm max-w-[85%] text-sm shadow-sm leading-relaxed">
-                  {msg.text}
+          <>
+            {session.messages.map((msg) =>
+              msg.role === "user" ? (
+                <div key={msg.id} className="flex flex-col items-end">
+                  <div className="bg-[#eb6f45f1] text-white px-4 py-3 rounded-2xl rounded-tr-sm max-w-[85%] text-sm shadow-sm leading-relaxed">
+                    {msg.text}
+                  </div>
+                  <span className="text-xs text-gray-400 mt-1 mr-1">{msg.timestamp}</span>
                 </div>
-                <span className="text-xs text-gray-400 mt-1 mr-1">{msg.timestamp}</span>
-              </div>
-            ) : (
-              <div key={msg.id} className="flex flex-col items-start w-full">
-                <div className="bg-gray-50 border border-gray-200 px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm">
-                  <MarkdownContent text={msg.text} />
+              ) : (
+                <div key={msg.id} className="flex flex-col items-start w-full">
+                  <div className="bg-gray-50 border border-gray-200 px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm">
+                    {/* Agent Pipeline — collapsed toggle */}
+                    {msg.agentSteps && msg.agentSteps.length > 0 && (
+                      <AgentPipelinePanel steps={msg.agentSteps} isLive={false} />
+                    )}
+                    {/* Final answer */}
+                    <MarkdownContent text={msg.text} />
+                    {/* Source file citation */}
+                    {msg.sourceFile && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-1.5 flex-wrap text-[11px] text-gray-400">
+                        <span>📂</span>
+                        <span className="font-medium text-gray-500">แหล่งข้อมูล:</span>
+                        <a
+                          href={`/api/files/${msg.sourceFile.id}?download=1`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`ดาวน์โหลด ${msg.sourceFile.name}`}
+                          className="font-mono text-[10px] bg-[#fff4ef] border border-[#eb6f45]/20 px-1.5 py-0.5 rounded text-[#eb6f45] hover:bg-[#eb6f45] hover:text-white transition-colors truncate max-w-[260px] underline-offset-2 hover:underline"
+                        >
+                          {msg.sourceFile.name}
+                        </a>
+                        <span className="text-gray-300">·</span>
+                        <span className="text-gray-400">ID: {msg.sourceFile.id}</span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs text-gray-400 mt-1 ml-1">{msg.timestamp}</span>
                 </div>
-                <span className="text-xs text-gray-400 mt-1 ml-1">{msg.timestamp}</span>
+              )
+            )}
+
+            {/* ── Live streaming bubble (shown while agents are running) ── */}
+            {hasLivePipeline && (
+              <div className="flex flex-col items-start w-full">
+                <div className="bg-gray-50 border border-[#eb6f45]/20 px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm">
+                  <AgentPipelinePanel steps={liveSteps!} isLive={true} />
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
+                    <span>กำลังสรุปผลลัพธ์</span>
+                    <span className="flex gap-1">
+                      {[0, 150, 300].map((d) => (
+                        <span
+                          key={d}
+                          className="w-1 h-1 rounded-full bg-gray-400 animate-bounce"
+                          style={{ animationDelay: `${d}ms` }}
+                        />
+                      ))}
+                    </span>
+                  </div>
+                </div>
               </div>
-            )
-          )
+            )}
+          </>
         )}
 
         {session.error && (
@@ -63,6 +122,10 @@ export const LeftPane = () => {
         )}
 
         <div ref={bottomRef} />
+      </div>
+
+      <div className="shrink-0 p-3 border-t border-gray-100">
+        <ChatInput />
       </div>
     </div>
   );

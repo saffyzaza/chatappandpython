@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Readable } from 'stream'
-import { writeApaMetadata } from '@/lib/fileApaMetadata'
+import { writeApaMetadata, writeFilePathData } from '@/lib/fileApaMetadata'
 import { minioClient, BUCKET_NAME, ensureBucket } from '@/lib/minio'
 import { canGenerateApa, generateApaResult, trimMetadataValue, trimResearchers } from '@/lib/apa'
 
@@ -82,10 +82,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Store full name/path in sidecar to avoid MinIO metadata size limit on long Thai paths.
+    await writeFilePathData(fileId, { name: file.name, path: filePath })
+
     const metaData = {
       'Content-Type': mimeType,
-      'x-amz-meta-name': encodeURIComponent(file.name),
-      'x-amz-meta-path': encodeURIComponent(filePath),
+      'x-amz-meta-name': encodeURIComponent(file.name.slice(0, 150)),
+      'x-amz-meta-path': encodeURIComponent(filePath.slice(0, 150)),
       'x-amz-meta-extension': extension,
       'x-amz-meta-previewkind': previewKind,
       'x-amz-meta-size': file.size.toString(),

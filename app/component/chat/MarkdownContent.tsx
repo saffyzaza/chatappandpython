@@ -6,39 +6,70 @@ type MarkdownContentProps = {
   className?: string;
 };
 
+const ExternalLinkIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-60 shrink-0 inline-block">
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+    <polyline points="15 3 21 3 21 9"/>
+    <line x1="10" y1="14" x2="21" y2="3"/>
+  </svg>
+);
+
+function urlDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url.slice(0, 20);
+  }
+}
+
 function renderInline(text: string): React.ReactNode {
   const parts: React.ReactNode[] = [];
-  const regex = /(`[^`\n]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|~~[^~]+~~)/g;
+  // จับ: markdown link | code | bold | italic | strikethrough | bare URL
+  const regex = /(\[([^\]]+)\]\((https?:\/\/[^)]+)\)|`[^`\n]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|~~[^~]+~~|https?:\/\/[^\s)]+)/g;
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
   let key = 0;
+  let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>);
     }
+
     const m = match[0];
-    if (m.startsWith("`")) {
+
+    if (m.startsWith("[")) {
+      // [label](url)
+      const label = match[2] ?? "";
+      const url   = match[3] ?? "";
+      const short = label.length > 40 ? label.slice(0, 38) + "…" : label;
+      parts.push(
+        <a key={key++} href={url} target="_blank" rel="noopener noreferrer"
+           className="inline-flex items-center gap-0.5 text-[#eb6f45] hover:text-[#c85f35] hover:underline transition-colors">
+          <span>{short}</span><ExternalLinkIcon />
+        </a>,
+      );
+    } else if (m.startsWith("http")) {
+      // bare URL → แสดงแค่ domain
+      parts.push(
+        <a key={key++} href={m} target="_blank" rel="noopener noreferrer"
+           className="inline-flex items-center gap-0.5 text-[#eb6f45] hover:text-[#c85f35] hover:underline transition-colors">
+          <span>{urlDomain(m)}</span><ExternalLinkIcon />
+        </a>,
+      );
+    } else if (m.startsWith("`")) {
       parts.push(
         <code key={key++} className="bg-gray-100 text-[#d63384] px-1.5 py-0.5 rounded font-mono text-[0.82em]">
           {m.slice(1, -1)}
         </code>,
       );
     } else if (m.startsWith("**")) {
-      parts.push(
-        <strong key={key++} className="font-semibold text-gray-900">
-          {m.slice(2, -2)}
-        </strong>,
-      );
+      parts.push(<strong key={key++} className="font-semibold text-gray-900">{m.slice(2, -2)}</strong>);
     } else if (m.startsWith("*")) {
-      parts.push(
-        <em key={key++} className="italic">
-          {m.slice(1, -1)}
-        </em>,
-      );
+      parts.push(<em key={key++} className="italic">{m.slice(1, -1)}</em>);
     } else if (m.startsWith("~~")) {
       parts.push(<del key={key++}>{m.slice(2, -2)}</del>);
     }
+
     lastIndex = match.index + m.length;
   }
 
@@ -57,21 +88,18 @@ function parseNumber(str: string): number {
   return parseFloat(str.replace(/[,%]/g, "")) || 0;
 }
 
-function BarChart({ headers, rows }: { headers: string[]; rows: string[][] }) {
-  const numericColIndex = headers.slice(1).findIndex((_, i) =>
-    rows.every((row) => isNumericCell(row[i + 1] || "")),
-  );
+const CHART_COLORS = [
+  "#eb6f45", "#4f8ef7", "#22c55e", "#f59e0b", "#a855f7",
+  "#06b6d4", "#ef4444", "#84cc16", "#ec4899", "#14b8a6",
+];
 
-  if (numericColIndex === -1) return null;
-
-  const colIndex = numericColIndex + 1;
+function BarChart({ headers, rows, colIndex }: { headers: string[]; rows: string[][]; colIndex: number }) {
   const values = rows.map((row) => parseNumber(row[colIndex] || "0"));
   const maxVal = Math.max(...values, 1);
   const labels = rows.map((row) => row[0] || "");
-  const colors = ["#eb6f45", "#f0a882", "#d4845a", "#c4623a", "#b34f2a", "#a03d1f"];
 
   return (
-    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+    <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
       <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">
         {headers[colIndex]}
       </div>
@@ -81,11 +109,10 @@ function BarChart({ headers, rows }: { headers: string[]; rows: string[][] }) {
             <div className="w-24 text-right text-gray-500 truncate shrink-0 text-[11px]">{label}</div>
             <div className="flex-1 bg-gray-200 rounded-full h-5 overflow-hidden">
               <div
-                className="h-full rounded-full flex items-center px-2 text-white text-[10px] font-medium"
+                className="h-full rounded-full flex items-center px-2 text-white text-[10px] font-medium transition-all duration-700"
                 style={{
                   width: `${Math.max((values[i] / maxVal) * 100, 5)}%`,
-                  backgroundColor: colors[i % colors.length],
-                  transition: "width 0.6s ease",
+                  backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
                 }}
               >
                 {rows[i][colIndex]}
@@ -98,28 +125,126 @@ function BarChart({ headers, rows }: { headers: string[]; rows: string[][] }) {
   );
 }
 
-function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) {
-  const [showChart, setShowChart] = useState(false);
+function PieChart({ headers, rows, colIndex }: { headers: string[]; rows: string[][]; colIndex: number }) {
+  const values = rows.map((row) => parseNumber(row[colIndex] || "0"));
+  const total = values.reduce((s, v) => s + v, 0) || 1;
+  const labels = rows.map((row) => row[0] || "");
 
-  const hasNumeric =
-    headers.length > 1 &&
-    headers.slice(1).some((_, i) => rows.every((row) => isNumericCell(row[i + 1] || "")));
+  // Build SVG pie slices
+  const cx = 80, cy = 80, r = 72;
+  let cumAngle = -Math.PI / 2; // start at top
+
+  const slices = values.map((val, i) => {
+    const angle = (val / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(cumAngle);
+    const y1 = cy + r * Math.sin(cumAngle);
+    cumAngle += angle;
+    const x2 = cx + r * Math.cos(cumAngle);
+    const y2 = cy + r * Math.sin(cumAngle);
+    const largeArc = angle > Math.PI ? 1 : 0;
+    const pct = total > 0 ? ((val / total) * 100).toFixed(1) : "0";
+    // label position (middle of arc)
+    const midAngle = cumAngle - angle / 2;
+    const lx = cx + (r * 0.62) * Math.cos(midAngle);
+    const ly = cy + (r * 0.62) * Math.sin(midAngle);
+    return { x1, y1, x2, y2, largeArc, pct, lx, ly, angle, color: CHART_COLORS[i % CHART_COLORS.length] };
+  });
+
+  return (
+    <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
+      <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-3">
+        {headers[colIndex]}
+      </div>
+      <div className="flex flex-wrap gap-4 items-start justify-center">
+        {/* SVG Pie */}
+        <svg width="160" height="160" viewBox="0 0 160 160" className="shrink-0">
+          {slices.map((s, i) =>
+            s.angle < 0.001 ? null : (
+              <g key={i}>
+                <path
+                  d={`M ${cx} ${cy} L ${s.x1} ${s.y1} A ${r} ${r} 0 ${s.largeArc} 1 ${s.x2} ${s.y2} Z`}
+                  fill={s.color}
+                  stroke="white"
+                  strokeWidth="1.5"
+                  className="hover:opacity-80 transition-opacity cursor-pointer"
+                />
+                {s.angle > 0.25 && (
+                  <text
+                    x={s.lx}
+                    y={s.ly}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize="9"
+                    fontWeight="600"
+                    fill="white"
+                  >
+                    {s.pct}%
+                  </text>
+                )}
+              </g>
+            ),
+          )}
+        </svg>
+        {/* Legend */}
+        <div className="flex flex-col gap-1.5 min-w-0 max-w-[180px]">
+          {labels.map((label, i) => {
+            const pct = total > 0 ? ((values[i] / total) * 100).toFixed(1) : "0";
+            return (
+              <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-sm shrink-0"
+                  style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                />
+                <span className="text-gray-600 truncate">{label}</span>
+                <span className="text-gray-400 shrink-0 ml-auto pl-1">
+                  {rows[i][colIndex]} ({pct}%)
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type ChartView = "table" | "bar" | "pie";
+
+function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  const [view, setView] = useState<ChartView>("table");
+
+  // Find first fully-numeric column (skip col 0 = labels)
+  const numericColIndex = headers.slice(1).findIndex((_, i) =>
+    rows.every((row) => isNumericCell(row[i + 1] || "")),
+  );
+  const hasNumeric = headers.length > 1 && numericColIndex !== -1;
+  const colIndex = numericColIndex + 1;
 
   return (
     <div className="my-3">
       {hasNumeric && (
-        <div className="flex justify-end mb-1">
-          <button
-            onClick={() => setShowChart((v) => !v)}
-            className="text-[10px] px-2 py-0.5 rounded-full border border-[#eb6f45]/30 text-[#eb6f45] hover:bg-[#fff4ef] transition-colors flex items-center gap-1"
-          >
-            {showChart ? "📋 ตาราง" : "📊 กราฟ"}
-          </button>
+        <div className="flex justify-end mb-1 gap-1">
+          {(["table", "bar", "pie"] as ChartView[]).map((v) => {
+            const icons: Record<ChartView, string> = { table: "📋", bar: "📊", pie: "🥧" };
+            const labels: Record<ChartView, string> = { table: "ตาราง", bar: "แท่ง", pie: "วงกลม" };
+            return (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors flex items-center gap-0.5 ${
+                  view === v
+                    ? "bg-[#eb6f45] border-[#eb6f45] text-white"
+                    : "border-[#eb6f45]/30 text-[#eb6f45] hover:bg-[#fff4ef]"
+                }`}
+              >
+                {icons[v]} {labels[v]}
+              </button>
+            );
+          })}
         </div>
       )}
-      {showChart ? (
-        <BarChart headers={headers} rows={rows} />
-      ) : (
+
+      {view === "table" && (
         <div className="overflow-x-auto rounded-lg border border-gray-200">
           <table className="w-full text-sm">
             <thead>
@@ -144,6 +269,14 @@ function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) 
             </tbody>
           </table>
         </div>
+      )}
+
+      {view === "bar" && hasNumeric && (
+        <BarChart headers={headers} rows={rows} colIndex={colIndex} />
+      )}
+
+      {view === "pie" && hasNumeric && (
+        <PieChart headers={headers} rows={rows} colIndex={colIndex} />
       )}
     </div>
   );

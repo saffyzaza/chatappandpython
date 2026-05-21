@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Readable } from 'stream'
-import { readApaMetadata, removeApaMetadata } from '@/lib/fileApaMetadata'
+import {
+  readApaMetadata,
+  removeApaMetadata,
+  readFilePathData,
+  writeFilePathData,
+  removeFilePathData,
+} from '@/lib/fileApaMetadata'
 import { minioClient, BUCKET_NAME, ensureBucket } from '@/lib/minio'
 import { buildApaString, buildFallbackApaResult, canGenerateApa, extractYear } from '@/lib/apa'
 
@@ -80,13 +86,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const meta = stat.metaData || {}
-    const sidecarApa = await readApaMetadata(fileId)
+    const [sidecarApa, pathData] = await Promise.all([
+      readApaMetadata(fileId),
+      readFilePathData(fileId),
+    ])
 
     if (metaOnly) {
       return NextResponse.json({
         id: fileId,
-        name: decodeURIComponent((meta['name'] as string) || fileId),
-        path: decodeURIComponent((meta['path'] as string) || fileId),
+        name: pathData?.name ?? decodeURIComponent((meta['name'] as string) || fileId),
+        path: pathData?.path ?? decodeURIComponent((meta['path'] as string) || fileId),
         extension: (meta['extension'] as string) || '',
         size: parseInt((meta['size'] as string) || '0', 10),
         previewKind: (meta['previewkind'] as string) || 'unsupported',
@@ -96,7 +105,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const contentType = (meta['content-type'] as string) || 'application/octet-stream'
-    const fileName = decodeURIComponent((meta['name'] as string) || fileId)
+    const fileName = pathData?.name ?? decodeURIComponent((meta['name'] as string) || fileId)
 
     const objectStream = await minioClient.getObject(BUCKET_NAME, fileId)
 
@@ -131,7 +140,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { fileId } = await params
     await minioClient.removeObject(BUCKET_NAME, fileId)
-    await removeApaMetadata(fileId)
+    await Promise.all([removeApaMetadata(fileId), removeFilePathData(fileId)])
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Delete file error:', error)
@@ -158,16 +167,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const oldMeta = stat.metaData || {}
+    const oldPathData = await readFilePathData(fileId)
 
-    const newName = updates.name
-      ? encodeURIComponent(updates.name)
-      : (oldMeta['name'] as string) || fileId
-    const newPath = updates.path
-      ? encodeURIComponent(updates.path)
-      : (oldMeta['path'] as string) || fileId
+    const resolvedName =
+      updates.name ?? oldPathData?.name ?? decodeURIComponent((oldMeta['name'] as string) || fileId)
+    const resolvedPath =
+      updates.path ?? oldPathData?.path ?? decodeURIComponent((oldMeta['path'] as string) || fileId)
+
     const newExtension = updates.extension ?? ((oldMeta['extension'] as string) || '')
-    const newPreviewKind = updates.previewKind ?? ((oldMeta['previewkind'] as string) || 'unsupported')
+    const newPreviewKind =
+      updates.previewKind ?? ((oldMeta['previewkind'] as string) || 'unsupported')
     const contentType = (oldMeta['content-type'] as string) || 'application/octet-stream'
+
+    await writeFilePathData(fileId, { name: resolvedName, path: resolvedPath })
 
     // Re-upload with updated metadata (MinIO does not support in-place metadata updates)
     const objectStream = await minioClient.getObject(BUCKET_NAME, fileId)
@@ -182,8 +194,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const newMeta = {
       'Content-Type': contentType,
-      'x-amz-meta-name': newName,
-      'x-amz-meta-path': newPath,
+      'x-amz-meta-name': encodeURIComponent(resolvedName.slice(0, 150)),
+      'x-amz-meta-path': encodeURIComponent(resolvedPath.slice(0, 150)),
       'x-amz-meta-extension': newExtension,
       'x-amz-meta-previewkind': newPreviewKind,
       'x-amz-meta-size': (oldMeta['size'] as string) || '0',
