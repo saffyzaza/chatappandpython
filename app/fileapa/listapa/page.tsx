@@ -6,6 +6,111 @@ import { useSearchParams } from 'next/navigation'
 import type { FileInsightResult } from '../insightTypes'
 import { getAllFiles, type StoredFile } from '../fileStorage'
 
+type ChartDisplayMode = 'table' | 'bar' | 'pie'
+
+const CHART_COLORS = ['#eb6f45', '#4f87e2', '#29c063', '#f59f0a', '#8b5cf6', '#ef476f', '#14b8a6']
+
+function formatChartValue(value: number) {
+  if (Math.abs(value) >= 1000) {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 0 })
+  }
+
+  if (Math.abs(value) >= 100) {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 1 })
+  }
+
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function toPercent(value: number, total: number) {
+  if (!Number.isFinite(total) || total <= 0) {
+    return 0
+  }
+  return (value / total) * 100
+}
+
+function isLikelyTimelineLabels(labels: string[]) {
+  if (labels.length < 3) {
+    return false
+  }
+
+  const years = labels
+    .map((label) => {
+      const m = label.match(/\b(19\d{2}|20\d{2}|25\d{2})\b/)
+      return m ? Number(m[1]) : null
+    })
+    .filter((year): year is number => year !== null)
+
+  if (years.length < Math.ceil(labels.length * 0.7)) {
+    return false
+  }
+
+  for (let i = 1; i < years.length; i += 1) {
+    if (years[i] < years[i - 1]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function buildConicGradient(stops: Array<{ value: number; color: string }>) {
+  const total = stops.reduce((sum, stop) => sum + Math.max(stop.value, 0), 0)
+
+  if (total <= 0) {
+    return 'conic-gradient(#e5e7eb 0 100%)'
+  }
+
+  let cursor = 0
+  const segments = stops.map((stop) => {
+    const next = cursor + toPercent(Math.max(stop.value, 0), total)
+    const segment = `${stop.color} ${cursor.toFixed(2)}% ${next.toFixed(2)}%`
+    cursor = next
+    return segment
+  })
+
+  return `conic-gradient(${segments.join(',')})`
+}
+
+function buildChartNarrative(data: Array<{ label: string; value: number }>) {
+  if (!data.length) {
+    return ['ยังไม่มีข้อมูลเพียงพอสำหรับสรุปแนวโน้มของกราฟนี้']
+  }
+
+  const sorted = [...data].sort((a, b) => b.value - a.value)
+  const total = data.reduce((sum, item) => sum + item.value, 0)
+  const top = sorted[0]
+  const bottom = sorted[sorted.length - 1]
+  const average = total / data.length
+  const spread = top.value - bottom.value
+
+  const lines = [
+    `ค่าสูงสุดคือ ${top.label} ที่ ${formatChartValue(top.value)} (${toPercent(top.value, total).toFixed(1)}% ของทั้งหมด)`,
+    `ค่าเฉลี่ยอยู่ที่ ${formatChartValue(average)} และช่วงความต่างสูงสุด-ต่ำสุดเท่ากับ ${formatChartValue(spread)}`,
+  ]
+
+  if (isLikelyTimelineLabels(data.map((item) => item.label))) {
+    const first = data[0]
+    const last = data[data.length - 1]
+    const delta = last.value - first.value
+    const direction = delta > 0 ? 'เพิ่มขึ้น' : delta < 0 ? 'ลดลง' : 'ทรงตัว'
+    lines.push(
+      `แนวโน้มตามเวลา ${direction} จาก ${first.label} (${formatChartValue(first.value)}) ไป ${last.label} (${formatChartValue(last.value)})`,
+    )
+  } else {
+    lines.push(`ค่าต่ำสุดคือ ${bottom.label} ที่ ${formatChartValue(bottom.value)} ควรใช้เป็นจุดเทียบในการติดตามผล`) 
+  }
+
+  return lines
+}
+
+function getInitialChartMode(chartType: 'bar' | 'line' | 'pie'): ChartDisplayMode {
+  if (chartType === 'pie') {
+    return 'pie'
+  }
+  return 'bar'
+}
+
 function ListApaContent() {
   const searchParams = useSearchParams()
   const highlightedFileId = searchParams.get('fileId')
@@ -20,6 +125,7 @@ function ListApaContent() {
   const [isInsightLoading, setIsInsightLoading] = useState(false)
   const [insightProgress, setInsightProgress] = useState<string>('')
   const [insightError, setInsightError] = useState('')
+  const [chartModes, setChartModes] = useState<Record<string, ChartDisplayMode>>({})
 
   useEffect(() => {
     const loadFiles = async () => {
@@ -49,6 +155,7 @@ function ListApaContent() {
       setInsight(null)
       setInsightError('')
       setInsightProgress('')
+      setChartModes({})
       return
     }
 
@@ -57,6 +164,7 @@ function ListApaContent() {
     setInsightError('')
     setInsightProgress('กำลังอ่านไฟล์...')
     setInsight(null)
+    setChartModes({})
 
     try {
       const response = await fetch(`/api/files/${fileId}/insights`)
@@ -372,35 +480,147 @@ function ListApaContent() {
                                 {currentInsight.charts.length ? (
                                   <div className="mt-4 space-y-4">
                                     {currentInsight.charts.map((chart, chartIndex) => {
-                                      const maxValue = Math.max(...chart.data.map((item) => item.value), 1)
+                                      const chartKey = `${currentInsight.fileId}-chart-${chartIndex}`
+                                      const mode = chartModes[chartKey] ?? getInitialChartMode(chart.chartType)
+                                      const timeline = isLikelyTimelineLabels(chart.data.map((item) => item.label))
+                                      const sortedForRanking = [...chart.data].sort((a, b) => b.value - a.value)
+                                      const baseData = timeline ? chart.data : sortedForRanking
+                                      const pieData = [...baseData]
+                                      const total = pieData.reduce((sum, item) => sum + item.value, 0)
+                                      const maxValue = Math.max(...baseData.map((item) => item.value), 1)
+                                      const chartNarrative = buildChartNarrative(baseData)
 
                                       return (
-                                        <div key={`${currentInsight.fileId}-chart-${chartIndex}`} className="rounded-xl border border-[#f0dfd8] bg-[#fcfbf9] px-4 py-4">
+                                        <div
+                                          key={`${currentInsight.fileId}-chart-${chartIndex}`}
+                                          className="rounded-xl border border-[#e8edf3] bg-[#f7fafc] px-4 py-4 shadow-sm"
+                                          style={{ background: 'linear-gradient(180deg, #fcfeff 0%, #f7fafc 100%)' }}
+                                        >
                                           <div className="flex flex-wrap items-start justify-between gap-3">
                                             <div>
                                               <h3 className="text-sm font-semibold text-gray-800">{chart.title}</h3>
                                               <p className="mt-1 text-xs text-gray-500">{chart.insight}</p>
                                             </div>
-                                            <span className="rounded-full bg-[#fff3ee] px-2.5 py-1 text-[11px] font-medium uppercase text-[#c85f35]">
-                                              {chart.chartType}
-                                            </span>
+                                            <div className="flex items-center gap-1 rounded-full border border-[#f3d5c8] bg-white p-1">
+                                              {([
+                                                { mode: 'table', label: 'ตาราง' },
+                                                { mode: 'bar', label: 'แท่ง' },
+                                                { mode: 'pie', label: 'วงกลม' },
+                                              ] as const).map((opt) => (
+                                                <button
+                                                  key={opt.mode}
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setChartModes((current) => ({
+                                                      ...current,
+                                                      [chartKey]: opt.mode,
+                                                    }))
+                                                  }
+                                                  className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                                    mode === opt.mode
+                                                      ? 'bg-[#eb6f45f1] text-white shadow'
+                                                      : 'text-gray-500 hover:bg-[#fff3ee]'
+                                                  }`}
+                                                >
+                                                  {opt.label}
+                                                </button>
+                                              ))}
+                                            </div>
                                           </div>
 
-                                          <div className="mt-4 space-y-3">
-                                            {chart.data.map((item) => (
-                                              <div key={`${chart.title}-${item.label}`}>
-                                                <div className="mb-1 flex items-center justify-between gap-3 text-xs text-gray-500">
-                                                  <span className="truncate">{item.label}</span>
-                                                  <span>{item.value.toLocaleString()}</span>
-                                                </div>
-                                                <div className="h-2 rounded-full bg-[#f5dfd5]">
-                                                  <div
-                                                    className="h-2 rounded-full bg-[#eb6f45f1]"
-                                                    style={{ width: `${Math.max((item.value / maxValue) * 100, 8)}%` }}
-                                                  />
+                                          {mode === 'table' ? (
+                                            <div className="mt-4 overflow-hidden rounded-xl border border-[#e8edf3] bg-white">
+                                              <table className="min-w-full text-sm">
+                                                <thead className="bg-[#f8fafc] text-xs uppercase tracking-wide text-gray-500">
+                                                  <tr>
+                                                    <th className="px-3 py-2 text-left font-semibold">อันดับ</th>
+                                                    <th className="px-3 py-2 text-left font-semibold">รายการ</th>
+                                                    <th className="px-3 py-2 text-right font-semibold">ค่า</th>
+                                                    <th className="px-3 py-2 text-right font-semibold">สัดส่วน</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {baseData.map((item, rowIndex) => (
+                                                    <tr key={`${chart.title}-${item.label}`} className="border-t border-[#eef2f6] text-gray-700">
+                                                      <td className="px-3 py-2 text-xs text-gray-500">{rowIndex + 1}</td>
+                                                      <td className="px-3 py-2">{item.label}</td>
+                                                      <td className="px-3 py-2 text-right font-medium">{formatChartValue(item.value)}</td>
+                                                      <td className="px-3 py-2 text-right text-gray-500">{toPercent(item.value, total).toFixed(1)}%</td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          ) : null}
+
+                                          {mode === 'bar' ? (
+                                            <div className="mt-4 space-y-3">
+                                              {baseData.map((item, dataIndex) => {
+                                                const color = CHART_COLORS[dataIndex % CHART_COLORS.length]
+                                                return (
+                                                  <div key={`${chart.title}-${item.label}`}>
+                                                    <div className="mb-1 flex items-center justify-between gap-3 text-xs text-gray-600">
+                                                      <span className="truncate">{item.label}</span>
+                                                      <span className="font-medium">{formatChartValue(item.value)}</span>
+                                                    </div>
+                                                    <div className="h-3 rounded-full bg-[#edf1f5]">
+                                                      <div
+                                                        className="h-3 rounded-full transition-all duration-500"
+                                                        style={{
+                                                          width: `${Math.max((item.value / maxValue) * 100, 6)}%`,
+                                                          background: `linear-gradient(90deg, ${color} 0%, ${color}cc 100%)`,
+                                                        }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                )
+                                              })}
+                                            </div>
+                                          ) : null}
+
+                                          {mode === 'pie' ? (
+                                            <div className="mt-4 grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-center">
+                                              <div className="relative mx-auto h-52 w-52 rounded-full"
+                                                style={{
+                                                  background: buildConicGradient(
+                                                    pieData.map((item, dataIndex) => ({
+                                                      value: item.value,
+                                                      color: CHART_COLORS[dataIndex % CHART_COLORS.length],
+                                                    })),
+                                                  ),
+                                                }}
+                                              >
+                                                <div className="absolute inset-[23%] flex flex-col items-center justify-center rounded-full bg-white text-center shadow-inner">
+                                                  <p className="text-[11px] uppercase tracking-wider text-gray-400">รวมทั้งหมด</p>
+                                                  <p className="mt-1 text-lg font-semibold text-gray-800">{formatChartValue(total)}</p>
                                                 </div>
                                               </div>
-                                            ))}
+                                              <div className="space-y-2">
+                                                {pieData.map((item, dataIndex) => {
+                                                  const color = CHART_COLORS[dataIndex % CHART_COLORS.length]
+                                                  return (
+                                                    <div key={`${chart.title}-pie-${item.label}`} className="flex items-center gap-3 rounded-lg bg-white px-3 py-2 text-xs text-gray-600">
+                                                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: color }} />
+                                                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                                      <span className="font-medium text-gray-700">{formatChartValue(item.value)}</span>
+                                                      <span className="w-12 text-right text-gray-500">{toPercent(item.value, total).toFixed(1)}%</span>
+                                                    </div>
+                                                  )
+                                                })}
+                                              </div>
+                                            </div>
+                                          ) : null}
+
+                                          <div className="mt-4 rounded-xl border border-[#e6ecf2] bg-white px-3 py-3">
+                                            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#4a6b9a]">วิเคราะห์กราฟ</p>
+                                            <ul className="mt-2 space-y-1.5 text-xs leading-6 text-gray-700">
+                                              {chartNarrative.map((line, lineIndex) => (
+                                                <li key={`${chart.title}-analysis-${lineIndex}`} className="flex gap-2">
+                                                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#4f87e2]" />
+                                                  <span>{line}</span>
+                                                </li>
+                                              ))}
+                                            </ul>
                                           </div>
                                         </div>
                                       )

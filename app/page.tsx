@@ -1,7 +1,4 @@
 
-
-import { ChatInput } from "./component/chat/ChatInput";
-
 export default function Home() {
   const cards = [
     {

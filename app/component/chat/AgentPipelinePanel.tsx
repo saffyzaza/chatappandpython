@@ -28,6 +28,7 @@ function StepRow({ step, isLast, isLive }: { step: AgentStep; isLast: boolean; i
   const isDone = step.status === "done";
   const resultText = step.result?.trim() ?? "";
   const preview = resultText.length > 240 ? resultText.slice(0, 240) + "…" : resultText;
+  const showPreview = Boolean(preview && !step.code);
 
   return (
     <div className={!isLast ? "mb-1" : ""}>
@@ -49,14 +50,14 @@ function StepRow({ step, isLast, isLive }: { step: AgentStep; isLast: boolean; i
       </button>
 
       {open && isDone && (
-        <div className="mt-1.5 mb-1 space-y-1.5">
-          {preview && (
+        <div className="mt-1.5 mb-1 space-y-1">
+          {showPreview && (
             <p className="text-xs text-gray-500 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
               {preview}
             </p>
           )}
           {step.code && (
-            <pre className="text-[11px] bg-gray-900 text-gray-100 rounded-lg p-3 overflow-x-auto max-h-48 overflow-y-auto leading-relaxed">
+            <pre className="text-[10px] bg-gray-900 text-gray-100 rounded-lg p-2 overflow-x-auto max-h-44 overflow-y-auto leading-relaxed w-full max-w-160">
               {step.code}
             </pre>
           )}

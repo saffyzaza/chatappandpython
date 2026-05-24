@@ -3,6 +3,52 @@ import type { FileInsightResult, InsightChart } from '@/app/fileapa/insightTypes
 
 type TableRows = string[][]
 
+function isLikelyTimeline(labels: string[]) {
+  if (labels.length < 3) {
+    return false
+  }
+
+  const years = labels
+    .map((label) => {
+      const m = label.match(/\b(19\d{2}|20\d{2}|25\d{2})\b/)
+      return m ? Number(m[1]) : null
+    })
+    .filter((year): year is number => year !== null)
+
+  if (years.length < Math.ceil(labels.length * 0.7)) {
+    return false
+  }
+
+  for (let i = 1; i < years.length; i += 1) {
+    if (years[i] < years[i - 1]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function buildChartInsight(title: string, points: Array<{ label: string; value: number }>) {
+  if (!points.length) {
+    return `ไม่พบข้อมูลเชิงตัวเลขเพียงพอในคอลัมน์ ${title}`
+  }
+
+  const sorted = [...points].sort((a, b) => b.value - a.value)
+  const total = points.reduce((sum, item) => sum + item.value, 0)
+  const top = sorted[0]
+  const share = total > 0 ? (top.value / total) * 100 : 0
+
+  if (isLikelyTimeline(points.map((point) => point.label))) {
+    const first = points[0]
+    const last = points[points.length - 1]
+    const diff = last.value - first.value
+    const direction = diff > 0 ? 'เพิ่มขึ้น' : diff < 0 ? 'ลดลง' : 'ทรงตัว'
+    return `แนวโน้มค่า ${title} ${direction} จาก ${first.label} ไป ${last.label} (${first.value.toLocaleString()} → ${last.value.toLocaleString()})`
+  }
+
+  return `ค่าหลักอยู่ที่ ${top.label} (${top.value.toLocaleString()}) คิดเป็นประมาณ ${share.toFixed(1)}% ของกลุ่มข้อมูลนี้`
+}
+
 function normalizeRows(rows: Array<Array<string | number | boolean | null | undefined>>) {
   return rows
     .map((row) => row.map((cell) => `${cell ?? ''}`.trim()))
@@ -62,10 +108,17 @@ function buildChartsFromRows(rows: TableRows): InsightChart[] {
       continue
     }
 
+    const labels = points.map((point) => point.label)
+    const chartType: InsightChart['chartType'] = isLikelyTimeline(labels)
+      ? 'line'
+      : points.length <= 6
+        ? 'pie'
+        : 'bar'
+
     charts.push({
       title: header[columnIndex] || `ชุดข้อมูล ${columnIndex + 1}`,
-      chartType: 'bar',
-      insight: `เปรียบเทียบค่าจากคอลัมน์ ${header[columnIndex] || columnIndex + 1}`,
+      chartType,
+      insight: buildChartInsight(header[columnIndex] || `ชุดข้อมูล ${columnIndex + 1}`, points),
       data: points,
     })
 
