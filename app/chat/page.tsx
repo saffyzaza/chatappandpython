@@ -12,7 +12,24 @@ export default function ChatPage() {
   const [leftWidth, setLeftWidth] = useState(60);
   const [isDragging, setIsDragging] = useState(false);
   const [showLeftPane, setShowLeftPane] = useState(true);
-  const [showRightPane, setShowRightPane] = useState(true);
+  const [showRightPane, setShowRightPane] = useState(false);
+
+  // auto-เปิด RightPane เมื่อ text stream หรือ html stream เริ่มทำงาน
+  useEffect(() => {
+    const openPane = (e: Event) => {
+      const ev = e as CustomEvent<{ reset: boolean }>;
+      if (ev.detail.reset) setShowRightPane(true);
+    };
+    const openPaneDirect = () => setShowRightPane(true);
+    window.addEventListener("thaijo-text-stream", openPane);
+    window.addEventListener("thaijo-html-stream", openPane);
+    window.addEventListener("open-journal-report", openPaneDirect);
+    return () => {
+      window.removeEventListener("thaijo-text-stream", openPane);
+      window.removeEventListener("thaijo-html-stream", openPane);
+      window.removeEventListener("open-journal-report", openPaneDirect);
+    };
+  }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();

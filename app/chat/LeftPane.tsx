@@ -1,12 +1,17 @@
 "use client";
-import { useSyncExternalStore, useEffect, useRef } from "react";
+import { useSyncExternalStore, useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { IoCopyOutline, IoPencilOutline } from "react-icons/io5";
 
-import { createEmptyChatSessionState, getChatSessionState, subscribeToChatSession } from "./chatSessionStore";
+import { createEmptyChatSessionState, getChatSessionState, saveChatSessionState, subscribeToChatSession } from "./chatSessionStore";
 import { getStreamingSteps, subscribeToStreamingState } from "./streamingStore";
 import { MarkdownContent } from "../component/chat/MarkdownContent";
 import { AgentPipelinePanel } from "../component/chat/AgentPipelinePanel";
 import { ChatInput } from "../component/chat/ChatInput";
+import { setDraft } from "./chatDraftStore";
+import { toggleDatabaseExplorer } from "./databaseExplorerStore";
+import { getThaijoReport, subscribeToThaijoReport } from "./thaijoStore";
+import type { ChatSessionState } from "./chatTypes";
 
 const PREVIEW_SESSION = createEmptyChatSessionState("preview-session");
 
@@ -20,6 +25,13 @@ export const LeftPane = () => {
     () => PREVIEW_SESSION,
   );
 
+  // Reactive ThaiJo report state — re-renders when HTML finishes
+  const thaijoReport = useSyncExternalStore(
+    subscribeToThaijoReport,
+    getThaijoReport,
+    () => null,
+  );
+
   // Live streaming steps
   const liveSteps = useSyncExternalStore(
     (onChange) => subscribeToStreamingState(sessionId, onChange),
@@ -31,10 +43,63 @@ export const LeftPane = () => {
   const hasLivePipeline = isRunning && liveSteps && liveSteps.length > 0;
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const hydratedSessionsRef = useRef<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = useCallback((id: string, text: string) => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    });
+  }, []);
+
+  const handleEdit = useCallback((text: string) => {
+    setDraft(text);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages.length, liveSteps?.length]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    if (hydratedSessionsRef.current.has(sessionId)) {
+      return;
+    }
+
+    if (getChatSessionState(sessionId).messages.length > 0) {
+      hydratedSessionsRef.current.add(sessionId);
+      return;
+    }
+
+    hydratedSessionsRef.current.add(sessionId);
+
+    const hydrateFromDatabase = async () => {
+      try {
+        const res = await fetch(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`);
+        if (!res.ok) {
+          return;
+        }
+
+        const payload = (await res.json()) as { state?: ChatSessionState | null };
+        if (!payload.state || !payload.state.messages?.length) {
+          return;
+        }
+
+        saveChatSessionState(sessionId, {
+          ...payload.state,
+          sessionId,
+        });
+      } catch (error) {
+        console.error("Hydrate chat history error:", error);
+      }
+    };
+
+    void hydrateFromDatabase();
+  }, [sessionId]);
 
   return (
     <div className="flex-1 h-full border-r border-gray-200 bg-white shrink-0 shadow-sm rounded-lg flex flex-col overflow-hidden">
@@ -53,14 +118,34 @@ export const LeftPane = () => {
           <>
             {session.messages.map((msg) =>
               msg.role === "user" ? (
-                <div key={msg.id} className="flex flex-col items-end">
+                <div key={msg.id} className="flex flex-col items-end group">
                   <div className="bg-[#eb6f45f1] text-white px-4 py-3 rounded-2xl rounded-tr-sm max-w-[85%] text-sm shadow-sm leading-relaxed">
                     {msg.text}
                   </div>
-                  <span className="text-xs text-gray-400 mt-1 mr-1">{msg.timestamp}</span>
+                  <div className="flex items-center gap-1.5 mt-1 mr-1">
+                    <span className="text-xs text-gray-400">{msg.timestamp}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(msg.id, msg.text)}
+                      className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 transition-colors px-1.5 py-0.5 rounded hover:bg-gray-100"
+                      title="คัดลอก"
+                    >
+                      <IoCopyOutline size={12} />
+                      <span>{copiedId === msg.id ? "คัดลอกแล้ว" : "คัดลอก"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(msg.text)}
+                      className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-[#eb6f45] transition-colors px-1.5 py-0.5 rounded hover:bg-[#fff4ef]"
+                      title="แก้ไขคำสั่ง"
+                    >
+                      <IoPencilOutline size={12} />
+                      <span>แก้ไข</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <div key={msg.id} className="flex flex-col items-start w-full">
+                <div key={msg.id} className="flex flex-col items-start w-full group">
                   <div className="bg-gray-50 border border-gray-200 px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm">
                     {/* Agent Pipeline — collapsed toggle */}
                     {msg.agentSteps && msg.agentSteps.length > 0 && (
@@ -68,6 +153,40 @@ export const LeftPane = () => {
                     )}
                     {/* Final answer */}
                     <MarkdownContent text={msg.text} />
+                    {/* ปุ่มดูผลลัพธ์ ThaiJo */}
+                    {msg.agentSteps?.some(s =>
+                      s.agentName === "ThaiJo Fetcher" || s.agentName === "Insight Analyst"
+                    ) && (
+                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                        {/* ปุ่ม 1: เปิด RightPane */}
+                        <button
+                          type="button"
+                          onClick={() => window.dispatchEvent(new CustomEvent("open-journal-report"))}
+                          className="flex items-center gap-1.5 rounded-xl border border-[#aad5b8] bg-[#e8f5ee] px-3 py-1.5 text-xs font-semibold text-[#1a6b3c] transition hover:bg-[#d0edda] hover:border-[#1a6b3c]"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          ดูผลลัพธ์ Journal Report
+                        </button>
+                        {/* ปุ่ม 2: เปิดหน้า HTML — แสดงเมื่อ AI สร้าง HTML เสร็จแล้วเท่านั้น */}
+                        {thaijoReport?.reportHtml && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const blob = new Blob([thaijoReport.reportHtml], { type: "text/html;charset=utf-8" });
+                              window.open(URL.createObjectURL(blob), "_blank");
+                            }}
+                            className="flex items-center gap-1.5 rounded-xl border border-[#b8d4f5] bg-[#e8f0fe] px-3 py-1.5 text-xs font-semibold text-[#1a56a8] transition hover:bg-[#d0e3fc] hover:border-[#1a56a8]"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                            เปิดหน้า HTML
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {/* Source file citation */}
                     {msg.sourceFile && (
                       <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-1.5 flex-wrap text-[11px] text-gray-400">
@@ -87,7 +206,18 @@ export const LeftPane = () => {
                       </div>
                     )}
                   </div>
-                  <span className="text-xs text-gray-400 mt-1 ml-1">{msg.timestamp}</span>
+                  <div className="flex items-center gap-1.5 mt-1 ml-1">
+                    <span className="text-xs text-gray-400">{msg.timestamp}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(msg.id, msg.text)}
+                      className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 transition-colors px-1.5 py-0.5 rounded hover:bg-gray-100"
+                      title="คัดลอก"
+                    >
+                      <IoCopyOutline size={12} />
+                      <span>{copiedId === msg.id ? "คัดลอกแล้ว" : "คัดลอก"}</span>
+                    </button>
+                  </div>
                 </div>
               )
             )}
@@ -125,7 +255,7 @@ export const LeftPane = () => {
       </div>
 
       <div className="shrink-0 p-3 border-t border-gray-100">
-        <ChatInput />
+        <ChatInput onToggleDatabaseExplorer={toggleDatabaseExplorer} />
       </div>
     </div>
   );

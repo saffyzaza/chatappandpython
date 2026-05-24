@@ -1,9 +1,45 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, FormEvent, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function LoginPage() {
+function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'เกิดข้อผิดพลาด');
+        return;
+      }
+
+      const redirect = searchParams.get('redirect') || '/';
+      router.push(redirect);
+      router.refresh();
+    } catch {
+      setError('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
@@ -19,23 +55,34 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-gray-500">ยินดีต้อนรับกลับมา</p>
         </div>
 
-        <form className="mt-8 space-y-5">
+        {error && (
+          <div className="flex items-start gap-3 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            {error}
+          </div>
+        )}
+
+        <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-bold text-gray-700 mb-1.5">
                 อีเมล
               </label>
-              <div>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-[#eb6f45] focus:border-[#eb6f45] outline-none transition text-sm"
-                  placeholder="example@email.com"
-                />
-              </div>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-[#eb6f45] focus:border-[#eb6f45] outline-none transition text-sm"
+                placeholder="example@email.com"
+              />
             </div>
 
             <div>
@@ -55,6 +102,8 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-[#eb6f45] focus:border-[#eb6f45] outline-none transition text-sm"
                   placeholder="••••••••"
                 />
@@ -77,8 +126,7 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
-            
-            {/* Add "Forgot Password" link here */}
+
             <div className="flex items-center justify-end pt-1">
               <a href="/forgot-password" className="text-sm font-medium text-gray-600 hover:text-[#eb6f45] transition">
                 ลืมรหัสผ่าน?
@@ -89,9 +137,16 @@ export default function LoginPage() {
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full px-4 py-3 text-white bg-[#eb6f45] rounded-lg hover:bg-[#d8562b] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#eb6f45] font-bold text-base transition shadow-sm"
+              disabled={loading}
+              className="w-full px-4 py-3 text-white bg-[#eb6f45] rounded-lg hover:bg-[#d8562b] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#eb6f45] font-bold text-base transition shadow-sm disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              เข้าสู่ระบบ
+              {loading && (
+                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+              )}
+              {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
             </button>
           </div>
         </form>
@@ -108,5 +163,17 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="w-8 h-8 border-2 border-[#eb6f45] border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }

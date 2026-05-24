@@ -1,24 +1,31 @@
 "use client"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
-import { IoChevronBackCircleSharp, IoAddOutline, IoSearchOutline, IoChatbubblesOutline, IoPersonCircleOutline, IoTimeOutline, IoChevronDown, IoEllipsisHorizontal } from "react-icons/io5"
+import { usePathname, useRouter } from "next/navigation"
+import { IoChevronBackCircleSharp, IoAddOutline, IoSearchOutline, IoChatbubblesOutline, IoPersonCircleOutline, IoTimeOutline, IoChevronDown, IoEllipsisHorizontal, IoLogOutOutline, IoPersonOutline, IoLibraryOutline } from "react-icons/io5"
 import { FiDatabase, FiFile, FiFolder } from "react-icons/fi"
 import clsx from "clsx"
 
 import { getAllFiles, type StoredFile } from "../fileapa/fileStorage"
+import { DatabaseExplorer } from "./DatabaseExplorer"
+import { clearDraft } from "../chat/chatDraftStore"
+import { clearAttachedFiles } from "../chat/attachedFilesStore"
+import { createEmptyChatSessionState, generateChatSessionId, saveChatSessionState } from "../chat/chatSessionStore"
+import { clearStreamingState } from "../chat/streamingStore"
+import { clearThaijoReport, clearThaijoSearchState } from "../chat/thaijoStore"
 
-const HISTORY_ITEMS = [
-    'What is React?',
-    'Next.js 14 features',
-    'Tailwind UI example',
-    'API Integration'
-];
+type ChatHistoryItem = {
+    sessionId: string
+    title: string
+    status: "idle" | "running" | "completed" | "failed"
+    updatedAt: string
+}
 
 const MENU_ITEMS = [
     {
+        key: 'new-chat',
         label: 'New chat',
-        href: '/',
+        href: '/chat',
         shortcut: '',
         icon: IoAddOutline,
         iconSize: 16,
@@ -27,6 +34,7 @@ const MENU_ITEMS = [
         badgeClass: 'ml-auto bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px]'
     },
     {
+        key: 'search',
         label: 'Search',
         shortcut: '',
         icon: IoSearchOutline,
@@ -36,9 +44,21 @@ const MENU_ITEMS = [
         badgeClass: 'ml-auto bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px]'
     },
     {
+        key: 'chats',
         label: 'Chats',
         shortcut: '',
         icon: IoChatbubblesOutline,
+        iconSize: 16,
+        iconContainerClass: 'w-6 h-6 flex items-center justify-center shrink-0',
+        badge: '',
+        badgeClass: 'ml-auto bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px]'
+    },
+    {
+        key: 'journal-library',
+        label: 'Journal Library',
+        href: '/journal',
+        shortcut: '',
+        icon: IoLibraryOutline,
         iconSize: 16,
         iconContainerClass: 'w-6 h-6 flex items-center justify-center shrink-0',
         badge: '',
@@ -48,6 +68,13 @@ const MENU_ITEMS = [
 
 type SidebarProps = {
     showDatabaseExplorer?: boolean
+}
+
+type AuthUser = {
+    id: string
+    name: string
+    email: string
+    role: string
 }
 
 type ExplorerNode = {
@@ -62,6 +89,11 @@ type ExplorerContextMenuState = {
     x: number
     y: number
     node: ExplorerNode
+}
+
+type UserMenuPosition = {
+    left: number
+    top: number
 }
 
 function buildExplorerTree(items: StoredFile[]): ExplorerNode[] {
@@ -173,6 +205,7 @@ function filterExplorerTree(nodes: ExplorerNode[], query: string): ExplorerNode[
 
 export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
     const router = useRouter()
+    const pathname = usePathname()
     const [isExpanded, setIsExpanded] = useState(false);
     const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
     const [isExplorerExpanded, setIsExplorerExpanded] = useState(true);
@@ -181,6 +214,12 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
     const [checkedPaths, setCheckedPaths] = useState<Set<string>>(new Set())
     const [contextMenu, setContextMenu] = useState<ExplorerContextMenuState | null>(null)
+    const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+    const [userMenuOpen, setUserMenuOpen] = useState(false)
+    const [userMenuPosition, setUserMenuPosition] = useState<UserMenuPosition | null>(null)
+    const [historyItems, setHistoryItems] = useState<ChatHistoryItem[]>([])
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+    const userMenuRef = useRef<HTMLDivElement>(null)
     const explorerTree = useMemo(() => buildExplorerTree(databaseItems), [databaseItems])
     const trimmedSearchQuery = searchQuery.trim().toLowerCase()
     const filteredExplorerTree = useMemo(
@@ -188,6 +227,52 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
         [explorerTree, trimmedSearchQuery],
     )
     const sidebarExpanded = isExpanded
+
+    const currentSessionId = pathname.match(/^\/chat\/sessions\/([^/]+)$/)?.[1] ?? null
+
+    const formatHistoryTime = (iso: string) => {
+        const date = new Date(iso)
+        if (Number.isNaN(date.getTime())) {
+            return ''
+        }
+
+        const now = new Date()
+        const isSameDay =
+            date.getDate() === now.getDate() &&
+            date.getMonth() === now.getMonth() &&
+            date.getFullYear() === now.getFullYear()
+
+        if (isSameDay) {
+            return new Intl.DateTimeFormat('th-TH', {
+                hour: '2-digit',
+                minute: '2-digit',
+            }).format(date)
+        }
+
+        return new Intl.DateTimeFormat('th-TH', {
+            day: '2-digit',
+            month: '2-digit',
+        }).format(date)
+    }
+
+    const loadHistory = async () => {
+        setIsHistoryLoading(true)
+
+        try {
+            const response = await fetch('/api/chat/history')
+            if (!response.ok) {
+                setHistoryItems([])
+                return
+            }
+
+            const payload = (await response.json()) as { sessions?: ChatHistoryItem[] }
+            setHistoryItems(Array.isArray(payload.sessions) ? payload.sessions : [])
+        } catch {
+            setHistoryItems([])
+        } finally {
+            setIsHistoryLoading(false)
+        }
+    }
 
     useEffect(() => {
         if (!showDatabaseExplorer) {
@@ -247,8 +332,106 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
         }
     }, [contextMenu])
 
+    useEffect(() => {
+        fetch('/api/auth/me')
+            .then((r) => r.json())
+            .then((d) => { if (d.user) setAuthUser(d.user) })
+            .catch(() => {})
+    }, [])
+
+    useEffect(() => {
+        void loadHistory()
+
+        const handleHistoryUpdated = () => {
+            void loadHistory()
+        }
+
+        window.addEventListener('chat-history-updated', handleHistoryUpdated)
+        return () => window.removeEventListener('chat-history-updated', handleHistoryUpdated)
+    }, [])
+
+    useEffect(() => {
+        if (!currentSessionId) {
+            return
+        }
+
+        void loadHistory()
+    }, [currentSessionId])
+
+    useEffect(() => {
+        if (!userMenuOpen) return
+        const close = (e: MouseEvent) => {
+            if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+                setUserMenuOpen(false)
+            }
+        }
+        window.addEventListener('mousedown', close)
+        return () => window.removeEventListener('mousedown', close)
+    }, [userMenuOpen])
+
+    useEffect(() => {
+        if (!userMenuOpen) {
+            setUserMenuPosition(null)
+            return
+        }
+
+        const updatePosition = () => {
+            if (!userMenuRef.current) {
+                return
+            }
+
+            const rect = userMenuRef.current.getBoundingClientRect()
+            const menuWidth = 208
+            const viewportPadding = 8
+            const desiredLeft = sidebarExpanded ? rect.left : rect.right + 8
+            const clampedLeft = Math.min(
+                Math.max(desiredLeft, viewportPadding),
+                window.innerWidth - menuWidth - viewportPadding,
+            )
+
+            setUserMenuPosition({
+                left: clampedLeft,
+                top: rect.top - 8,
+            })
+        }
+
+        updatePosition()
+        window.addEventListener('resize', updatePosition)
+        window.addEventListener('scroll', updatePosition, true)
+
+        return () => {
+            window.removeEventListener('resize', updatePosition)
+            window.removeEventListener('scroll', updatePosition, true)
+        }
+    }, [userMenuOpen, sidebarExpanded])
+
+    const handleLogout = async () => {
+        await fetch('/api/auth/logout', { method: 'POST' })
+        router.push('/login')
+        router.refresh()
+    }
+
     const handleToggleSidebar = () => {
         setIsExpanded((current) => !current)
+    }
+
+    const handleStartNewChat = () => {
+        const currentSessionId = pathname.match(/^\/chat\/sessions\/([^/]+)$/)?.[1]
+
+        if (currentSessionId) {
+            clearStreamingState(currentSessionId)
+        }
+
+        clearDraft()
+        clearAttachedFiles()
+        clearThaijoReport()
+        clearThaijoSearchState()
+
+        const nextSessionId = generateChatSessionId()
+        saveChatSessionState(nextSessionId, createEmptyChatSessionState(nextSessionId))
+        window.dispatchEvent(new CustomEvent("chat-new-session", { detail: { sessionId: nextSessionId } }))
+
+        router.push(`/chat/sessions/${nextSessionId}`)
     }
 
     const toggleExplorerFolder = (path: string) => {
@@ -354,10 +537,9 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
             <div className={clsx("h-screen overflow-hidden bg-[#f7f4f3f1] p-3 rounded-lg border border-gray-100 transition-all duration-300 flex flex-col", sidebarExpanded ? "w-64" : "w-14")}>
 
                 <div className="flex items-center justify-between mb-4">
-                    {/* life icons + right buttons */}
-                    <Image 
-                        src="/Thai_Health.png" 
-                        alt="Thai Health Logo" 
+                    <Image
+                        src="/Thai_Health.png"
+                        alt="Thai Health Logo"
                         width={32}
                         height={32}
                         className="transition-all duration-300 overflow-hidden"
@@ -366,7 +548,7 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
                             height: sidebarExpanded ? 32 : 0,
                             opacity: sidebarExpanded ? 1 : 0,
                         }}
-                    /> 
+                    />
                     <button onClick={handleToggleSidebar} className={clsx("transition-transform duration-300", !sidebarExpanded && "rotate-180 mx-auto")}>
                         <IoChevronBackCircleSharp size={28} className="text-[#eb6f45f1] hover:text-[#fc632c] hover:scale-110 transition-transform duration-300" />
                     </button>
@@ -378,6 +560,11 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
                             key={index}
                             type="button"
                             onClick={() => {
+                                if (item.key === 'new-chat') {
+                                    handleStartNewChat()
+                                    return
+                                }
+
                                 if (item.href) {
                                     router.push(item.href)
                                 }
@@ -387,11 +574,11 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
                             <div className={item.iconContainerClass}>
                                 <item.icon size={item.iconSize} className="" />
                             </div>
-                            
+
                             <span className={clsx("text-xs font-medium whitespace-nowrap overflow-hidden transition-all duration-300", sidebarExpanded ? "opacity-100 w-auto" : "opacity-0 w-0")}>
                                 {item.label}
                             </span>
-                            
+
                             {item.badge && sidebarExpanded && (
                                 <div className={item.badgeClass}>
                                     {item.badge}
@@ -411,7 +598,7 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
 
                 {/* history + hidehistory */}
                 <div className={clsx("mt-6 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 transition-all duration-300", sidebarExpanded ? "opacity-100" : "opacity-0 hidden")}>
-                    <button 
+                    <button
                         onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
                         className="text-xs font-semibold text-gray-500 mb-2 px-2 flex items-center justify-between w-full hover:text-gray-700 transition-colors"
                     >
@@ -422,86 +609,105 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
                     </button>
 
                     <div className={clsx("space-y-1 transition-all duration-300 overflow-hidden", isHistoryExpanded ? "max-h-64 opacity-100" : "max-h-0 opacity-0")}>
-                        {HISTORY_ITEMS.map((text, i) => (
-                            <button key={i} className="text-xs text-gray-700 hover:bg-[#f79d7f] hover:shadow-2xl hover:shadow-[#f79d7f] hover:text-gray-900 w-full text-left px-2 py-1.5 rounded-lg truncate transition-colors">
-                                {text}
-                            </button>
-                        ))}
+                        {isHistoryLoading ? (
+                            <p className="px-2 py-1.5 text-[11px] text-gray-400">กำลังโหลดประวัติ...</p>
+                        ) : historyItems.length === 0 ? (
+                            <p className="px-2 py-1.5 text-[11px] text-gray-400">ยังไม่มีประวัติการสนทนา</p>
+                        ) : (
+                            historyItems.map((item) => {
+                                const isActive = currentSessionId === item.sessionId
+
+                                return (
+                                    <button
+                                        key={item.sessionId}
+                                        type="button"
+                                        onClick={() => router.push(`/chat/sessions/${item.sessionId}`)}
+                                        className={clsx(
+                                            "w-full rounded-lg px-2 py-1.5 text-left text-xs transition-colors",
+                                            isActive
+                                                ? "bg-[#ffe4d8] text-[#9f3d1d]"
+                                                : "text-gray-700 hover:bg-[#f79d7f] hover:text-gray-900",
+                                        )}
+                                        title={item.title}
+                                    >
+                                        <div className="truncate">{item.title}</div>
+                                        <div className="mt-0.5 flex items-center justify-between text-[10px] text-gray-400">
+                                            <span>{item.status}</span>
+                                            <span>{formatHistoryTime(item.updatedAt)}</span>
+                                        </div>
+                                    </button>
+                                )
+                            })
+                        )}
                     </div>
 
                     {showDatabaseExplorer ? (
-                        <div className="mt-5 border-t border-[#f0dfd8] pt-4">
-                            <button
-                                type="button"
-                                onClick={() => setIsExplorerExpanded(!isExplorerExpanded)}
-                                className="text-xs font-semibold text-gray-500 mb-2 px-2 flex items-center justify-between w-full hover:text-gray-700 transition-colors"
-                            >
-                                <div className="flex items-center gap-1.5">
-                                    <FiDatabase size={13} className="text-[#eb6f45]" /> Explorer
-                                </div>
-                                <IoChevronDown size={14} className={clsx("transition-transform duration-300", !isExplorerExpanded && "-rotate-90")} />
-                            </button>
-
-                            <div className={clsx("transition-all duration-300", isExplorerExpanded ? "max-h-112 overflow-y-auto overscroll-contain pr-1 opacity-100" : "max-h-0 overflow-hidden opacity-0")}>
-                                <div className="rounded-2xl border border-[#f2ddd5] bg-[#fffaf8] p-2">
-                                    <div className="flex items-center gap-2 rounded-xl px-2 py-2 text-xs font-semibold text-[#6b4f45]">
-                                        <FiFolder size={14} className="text-[#eb6f45]" />
-                                        <span className="flex-1 truncate">workspace</span>
-                                        <span className="text-[10px] text-[#b28878]">{databaseItems.length}</span>
-                                    </div>
-
-                                    <div className="mt-2 flex items-center gap-2 rounded-xl border border-[#f2ddd5] bg-white px-2 py-2 text-xs text-gray-600 focus-within:border-[#eb6f45]">
-                                        <IoSearchOutline size={14} className="text-[#eb6f45]" />
-                                        <input
-                                            type="text"
-                                            value={searchQuery}
-                                            onChange={(event) => setSearchQuery(event.target.value)}
-                                            placeholder="ค้นหาไฟล์หรือโฟลเดอร์"
-                                            className="w-full bg-transparent outline-none placeholder:text-gray-400"
-                                        />
-                                    </div>
-
-                                    <div className="mt-1 space-y-0.5">
-                                        {filteredExplorerTree.length ? (
-                                            renderExplorerNodes(filteredExplorerTree)
-                                        ) : (
-                                            <div className="px-2 py-2 text-[11px] text-gray-500">
-                                                {trimmedSearchQuery ? "ไม่พบไฟล์หรือโฟลเดอร์ที่ค้นหา" : "ยังไม่มีไฟล์ในฐานข้อมูล"}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+                        <div className="mt-5 border-t border-[#f0dfd8] pt-3 flex-1 min-h-0">
+                            <DatabaseExplorer />
                         </div>
                     ) : null}
                 </div>
 
                 {/* user */}
-                <div className="mt-auto pt-3 border-t border-gray-200">
-                    <button className="group relative flex items-center gap-3 px-0.1 py-0.1 hover:bg-[#ffece5] rounded-xl transition-colors w-full text-left">
-                        <div className="bg-[#eb6f45f1] w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
-                            <IoPersonCircleOutline size={26} className="text-gray-200" />
+                <div className="mt-auto pt-3 border-t border-gray-200 relative" ref={userMenuRef}>
+                    <button
+                        onClick={() => setUserMenuOpen((v) => !v)}
+                        className="group relative flex items-center gap-3 px-0.5 py-0.5 hover:bg-[#ffece5] rounded-xl transition-colors w-full text-left"
+                    >
+                        <div className="bg-[#eb6f45f1] w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white text-sm font-bold uppercase">
+                            {authUser ? authUser.name.charAt(0) : <IoPersonCircleOutline size={22} className="text-gray-200" />}
                         </div>
-                        <div className={clsx("flex flex-1 items-center justify-between text-sm font-semibold text-gray-800 whitespace-nowrap overflow-hidden transition-all duration-300", sidebarExpanded ? "opacity-100 w-auto" : "opacity-0 w-0")}>
-                            <span>Joja User</span>
-                            <div className="hover:bg-gray-200 p-1 rounded-md transition-colors cursor-pointer">
+                        <div className={clsx("flex flex-1 items-center justify-between whitespace-nowrap overflow-hidden transition-all duration-300", sidebarExpanded ? "opacity-100 w-auto" : "opacity-0 w-0")}>
+                            <div className="flex flex-col min-w-0">
+                                <span className="text-sm font-semibold text-gray-800 truncate">{authUser?.name ?? '...'}</span>
+                                <span className="text-[10px] text-gray-400 truncate">{authUser?.email ?? ''}</span>
+                            </div>
+                            <div className="hover:bg-gray-200 p-1 rounded-md transition-colors ml-1">
                                 <IoEllipsisHorizontal size={18} className="text-gray-500" />
                             </div>
                         </div>
-                        
 
                         {/* Tooltip for collapsed state */}
                         {!sidebarExpanded && (
-                            <div className="absolute left-full ml-3 px-3 py-2 bg-[#2d2d2d] text-white text-xs font-semibold rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-md flex items-center gap-2">
-                                <div>
-                                    Joja User
-                                </div>
-                                
+                            <div className="absolute left-full ml-3 px-3 py-2 bg-[#2d2d2d] text-white text-xs font-semibold rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-md">
+                                {authUser?.name ?? 'ผู้ใช้งาน'}
                             </div>
                         )}
-                        
-                                
                     </button>
+
+                    {/* User dropdown menu */}
+                    {userMenuOpen && userMenuPosition && (
+                        <div
+                            className="fixed w-52 rounded-xl border border-[#f2ddd5] bg-white p-1.5 shadow-lg"
+                            style={{
+                                left: userMenuPosition.left,
+                                top: userMenuPosition.top,
+                                transform: 'translateY(-100%)',
+                                zIndex: 9999,
+                            }}
+                        >
+                            <div className="px-3 py-2 border-b border-gray-100 mb-1">
+                                <p className="text-xs font-semibold text-gray-800 truncate">{authUser?.name}</p>
+                                <p className="text-[10px] text-gray-400 truncate">{authUser?.email}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => { setUserMenuOpen(false); router.push('/account') }}
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-gray-700 transition-colors hover:bg-[#fff1eb] hover:text-[#eb6f45]"
+                            >
+                                <IoPersonOutline size={14} className="text-[#eb6f45]" />
+                                <span>บัญชีของฉัน</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleLogout}
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+                            >
+                                <IoLogOutOutline size={14} />
+                                <span>ออกจากระบบ</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {contextMenu ? (

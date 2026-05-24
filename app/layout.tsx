@@ -1,47 +1,21 @@
-
-'use client';
-
-import { useState } from "react";
-import { usePathname } from "next/navigation";
-
-import { Sidebar } from "./component/Sidebar";
-import { ChatInput } from "./component/chat/ChatInput";
+import type { Metadata } from "next";
 import "./globals.css";
+import { ClientLayout } from "./ClientLayout";
+
+export const metadata: Metadata = {
+  title: "AI Analyst — สสส",
+  description: "ระบบ AI วิเคราะห์ข้อมูลสุขภาพ",
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const pathname = usePathname();
-  const [showDatabaseExplorer, setShowDatabaseExplorer] = useState(false);
-  const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/register") || pathname.startsWith("/forgot-password");
-  const shouldShowChatInput = !pathname.startsWith("/fileapa") && !pathname.startsWith("/chat") && !isAuthPage;
-  const shouldShowDatabasePanel = showDatabaseExplorer || pathname.startsWith("/fileapa");
-
   return (
-    <html
-    >
+    <html lang="th">
       <body className="bg-white text-gray-800">
-        {isAuthPage ? (
-          <main className="min-h-screen w-full">
-            {children}
-          </main>
-        ) : (
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar showDatabaseExplorer={shouldShowDatabasePanel} />
-            <main className="flex flex-col flex-1 h-full w-full relative">
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                {children}
-              </div>
-              {shouldShowChatInput ? (
-                <div className="w-full bg-linear-to-t from-white via-white to-transparent p-4 pb-8 md:p-6 lg:px-24">
-                  <ChatInput onToggleDatabaseExplorer={() => setShowDatabaseExplorer((current) => !current)} />
-                </div>
-              ) : null}
-            </main>
-          </div>
-        )}
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );
