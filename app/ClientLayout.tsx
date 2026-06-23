@@ -25,6 +25,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
   const shouldShowChatInput =
     !pathname.startsWith("/fileapa") &&
+    !pathname.startsWith("/pdf-upload") &&
     !pathname.startsWith("/chat") &&
     !pathname.startsWith("/account") &&
     !pathname.startsWith("/approved") &&

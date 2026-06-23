@@ -14,6 +14,7 @@ import {
 } from "../../chat/attachedFilesStore";
 import { subscribeDraft, getDraft, clearDraft } from "../../chat/chatDraftStore";
 
+
 import type { AgentStep, ChatSessionState, SourceFile } from "../../chat/chatTypes";
 import {
     createChatSessionMessage,
@@ -310,13 +311,21 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         if (!file) return;
         setUploadingFile(true);
         try {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("path", file.name);
-            const res = await fetch("/api/files/upload", { method: "POST", body: formData });
-            if (!res.ok) throw new Error("Upload failed");
-            const stored = await res.json() as { id: string; name: string; extension: string };
-            attachFile({ id: stored.id, name: stored.name, extension: stored.extension });
+            const res = await fetch(`/api/files?path=${encodeURIComponent(file.name)}&filename=${encodeURIComponent(file.name)}&mime=${encodeURIComponent(file.type)}&size=${file.size}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': file.type || 'application/octet-stream',
+                    'Content-Length': file.size.toString()
+                },
+                body: file
+            });
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Upload failed');
+            }
+            const stored = await res.json();
+            if (stored.error) throw new Error(stored.error);
+            attachFile({ id: stored.id!, name: stored.name!, extension: stored.extension! });
             if (chatMode === "normal") setChatMode("database");
         } catch (err) {
             console.error("File upload error:", err);
@@ -332,13 +341,21 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         const previewUrl = URL.createObjectURL(file);
         setUploadingImage(true);
         try {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("path", file.name);
-            const res = await fetch("/api/files/upload", { method: "POST", body: formData });
-            if (!res.ok) throw new Error("Upload failed");
-            const stored = await res.json() as { id: string; name: string; extension: string };
-            attachFile({ id: stored.id, name: stored.name, extension: stored.extension, previewUrl });
+            const res = await fetch(`/api/files?path=${encodeURIComponent(file.name)}&filename=${encodeURIComponent(file.name)}&mime=${encodeURIComponent(file.type)}&size=${file.size}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': file.type || 'application/octet-stream',
+                    'Content-Length': file.size.toString()
+                },
+                body: file
+            });
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Upload failed');
+            }
+            const stored = await res.json();
+            if (stored.error) throw new Error(stored.error);
+            attachFile({ id: stored.id!, name: stored.name!, extension: stored.extension!, previewUrl });
             if (chatMode === "normal") setChatMode("database");
         } catch (err) {
             URL.revokeObjectURL(previewUrl);
