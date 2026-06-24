@@ -206,6 +206,23 @@ export default function Sidelist({
 }: SidelistProps) {
 	const tree = useMemo(() => buildTree(items, virtualFolders), [items, virtualFolders])
 	const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set(['root']))
+
+	useEffect(() => {
+		const allFolderPaths: string[] = []
+		const traverse = (nodes: TreeNode[]) => {
+			nodes.forEach((node) => {
+				if (node.kind === 'folder') {
+					allFolderPaths.push(node.path)
+					if (node.children) {
+						traverse(node.children)
+					}
+				}
+			})
+		}
+
+		traverse(tree)
+		setExpandedFolders(new Set(['root', ...allFolderPaths]))
+	}, [tree])
 	const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
 	const [draggedItemId, setDraggedItemId] = useState<string | null>(null)
 	const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
@@ -396,7 +413,7 @@ export default function Sidelist({
 	}
 
 	return (
-		<aside className="flex min-h-0 flex-1 flex-col bg-[#f7f4f3f1]">
+		<aside className="flex min-h-0 flex-1 flex-col bg-[#f7f4f3f1] px-1 xl:px-2">
 			<div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
 				<p className="text-sm font-semibold text-gray-800">Explorer</p>
 				<p className="text-xs text-gray-500">workspace</p>
@@ -407,7 +424,7 @@ export default function Sidelist({
 					ยังไม่มีไฟล์ใน workspace นี้ ลองอัปโหลดไฟล์หรือทั้งโฟลเดอร์เพื่อสร้าง tree ด้านซ้าย
 				</div>
 			) : (
-				<div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+				<div className="min-h-0 flex-1 overflow-auto px-3 py-3">
 					<button
 						type="button"
 						onClick={() => toggleFolder('root')}
@@ -415,7 +432,7 @@ export default function Sidelist({
 						onDragOver={(event) => handleDragOver(event, '')}
 						onDragLeave={handleDragLeave}
 						onDrop={(event) => handleDrop(event, '')}
-						className={`mb-1 flex w-full items-center gap-1 rounded px-1.5 py-0.5 text-left text-[13px] text-gray-700 transition ${
+						className={`mb-1 flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] text-gray-700 transition ${
 							dropTargetPath === ''
 								? 'bg-blue-50 ring-1 ring-blue-300'
 								: 'hover:bg-gray-100'

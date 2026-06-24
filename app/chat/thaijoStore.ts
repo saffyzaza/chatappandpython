@@ -18,7 +18,7 @@ let _state: ThaiJoReportState | null = null;
 
 // ── Write ──────────────────────────────────────────────────────────────────────
 
-export function setThaijoReport(state: ThaiJoReportState): void {
+export function setThaijoReport(state: ThaiJoReportState | null): void {
   if (typeof window === "undefined") return;
   _state = state;
   window.dispatchEvent(new CustomEvent(THAIJO_EVENT));
@@ -66,8 +66,13 @@ export type ThaijoSearchState = {
 
 let _searchState: ThaijoSearchState | null = null;
 
+const THAIJO_SEARCH_READY_EVENT = "thaijo-search-ready";
+
 export function setThaijoSearchState(s: ThaijoSearchState): void {
   _searchState = s;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(THAIJO_SEARCH_READY_EVENT));
+  }
 }
 
 export function getThaijoSearchState(): ThaijoSearchState | null {
@@ -78,17 +83,46 @@ export function clearThaijoSearchState(): void {
   _searchState = null;
 }
 
+export function subscribeToSearchReady(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener(THAIJO_SEARCH_READY_EVENT, onChange);
+  return () => window.removeEventListener(THAIJO_SEARCH_READY_EVENT, onChange);
+}
+
+// ── Direct Wizard Open (from journal-report tool) ────────────────────────────
+
+const THAIJO_WIZARD_EVENT = "thaijo-open-wizard";
+
+export type ThaijoWizardDetail = { query: string };
+
+export function openWizardDirect(query: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<ThaijoWizardDetail>(THAIJO_WIZARD_EVENT, { detail: { query } }),
+  );
+}
+
+export function subscribeToWizardOpen(onChange: (query: string) => void): () => void {
+  if (typeof window === "undefined") return () => undefined;
+  const handler = (e: Event) => {
+    const ev = e as CustomEvent<ThaijoWizardDetail>;
+    onChange(ev.detail.query ?? "");
+  };
+  window.addEventListener(THAIJO_WIZARD_EVENT, handler);
+  return () => window.removeEventListener(THAIJO_WIZARD_EVENT, handler);
+}
+
 // ── Text Streaming (article summaries) ────────────────────────────────────────
 
 const THAIJO_TEXT_EVENT = "thaijo-text-stream";
 
-export type ThaijoTextStreamDetail = { reset: boolean; chunk: string; done?: boolean };
+export type ThaijoTextStreamDetail = { reset: boolean; chunk: string; done?: boolean; showWizard?: boolean; label?: string };
 
-export function startThaijoTextStream(): void {
+export function startThaijoTextStream(showWizard = false, label?: string): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent<ThaijoTextStreamDetail>(THAIJO_TEXT_EVENT, {
-      detail: { reset: true, chunk: "" },
+      detail: { reset: true, chunk: "", showWizard, label },
     }),
   );
 }

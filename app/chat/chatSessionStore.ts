@@ -1,4 +1,4 @@
-import type { ChatSessionMessage, ChatSessionState, ChatMessageRole, AgentStep, SourceFile } from "./chatTypes";
+import type { ChatSessionMessage, ChatSessionState, ChatMessageRole, AgentStep, SourceFile, ObsidianNoteRef } from "./chatTypes";
 
 const CHAT_SESSION_PREFIX = "chat-session:";
 export const CHAT_SESSION_UPDATED_EVENT = "chat-session-updated";
@@ -54,6 +54,8 @@ export function createChatSessionMessage(
   text: string,
   agentSteps?: AgentStep[],
   sourceFile?: SourceFile,
+  notesReferenced?: ObsidianNoteRef[],
+  followUps?: string[],
 ): ChatSessionMessage {
   return {
     id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -62,6 +64,8 @@ export function createChatSessionMessage(
     timestamp: formatTimestamp(),
     ...(agentSteps && agentSteps.length > 0 ? { agentSteps } : {}),
     ...(sourceFile ? { sourceFile } : {}),
+    ...(notesReferenced && notesReferenced.length > 0 ? { notesReferenced } : {}),
+    ...(followUps && followUps.length > 0 ? { followUps } : {}),
   };
 }
 
@@ -153,13 +157,13 @@ export function updateChatSessionState(
 
 export function appendChatSessionMessages(
   sessionId: string,
-  entries: Array<{ role: ChatSessionMessage["role"]; text: string; agentSteps?: AgentStep[]; sourceFile?: SourceFile }>,
+  entries: Array<{ role: ChatSessionMessage["role"]; text: string; agentSteps?: AgentStep[]; sourceFile?: SourceFile; notesReferenced?: ObsidianNoteRef[]; followUps?: string[] }>,
 ) {
   return updateChatSessionState(sessionId, (current) => ({
     ...current,
     messages: [
       ...current.messages,
-      ...entries.map((entry) => createChatSessionMessage(entry.role, entry.text, entry.agentSteps, entry.sourceFile)),
+      ...entries.map((entry) => createChatSessionMessage(entry.role, entry.text, entry.agentSteps, entry.sourceFile, entry.notesReferenced, entry.followUps)),
     ],
   })).messages;
 }

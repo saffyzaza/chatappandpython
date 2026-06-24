@@ -7,6 +7,7 @@ export type AttachedFile = {
   id: string
   name: string
   extension: string
+  content?: string      // base64 content — ส่งตรงไป AI ไม่ผ่าน storage
   previewUrl?: string   // blob URL สำหรับ thumbnail รูปภาพ
 }
 

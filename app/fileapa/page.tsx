@@ -1,10 +1,11 @@
 'use client'
 
-import React, { ChangeEvent, useEffect, useRef, useState } from 'react'
+import { ChangeEvent, DragEvent, InputHTMLAttributes, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import Sidelist from './Sidelist'
 import Viewfile from './Viewfile'
+import MergeFilesModal from './MergeFilesModal'
 import { saveFile, getAllFiles, deleteFile, updateFile } from './fileStorage'
 
 type PreviewKind = 'pdf' | 'csv' | 'xlsx' | 'text' | 'unsupported'
@@ -77,6 +78,7 @@ export default function Page() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const [targetFolderPath, setTargetFolderPath] = useState<string>('')
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false)
   const folderUploadInputRef = useRef<HTMLInputElement>(null)
 
   // Load files from MinIO on mount
@@ -93,7 +95,9 @@ export default function Page() {
           previewKind: storedFile.previewKind,
           objectUrl: `/api/files/${storedFile.id}`,
         }))
+
         setItems(loadedItems)
+        setSelectedId(loadedItems[0]?.id ?? null)
       } catch (error) {
         console.error('Error loading files from MinIO:', error)
       }
@@ -286,7 +290,7 @@ export default function Page() {
     }
   }
 
-  const handleDropExternal = async (event: React.DragEvent) => {
+  const handleDropExternal = async (event: DragEvent) => {
     event.preventDefault()
     event.stopPropagation()
     setIsDraggingOver(false)
@@ -328,13 +332,13 @@ export default function Page() {
     }
   }
 
-  const handleDragOver = (event: React.DragEvent) => {
+  const handleDragOver = (event: DragEvent) => {
     event.preventDefault()
     event.stopPropagation()
     setIsDraggingOver(true)
   }
 
-  const handleDragLeave = (event: React.DragEvent) => {
+  const handleDragLeave = (event: DragEvent) => {
     event.preventDefault()
     event.stopPropagation()
     setIsDraggingOver(false)
@@ -349,12 +353,12 @@ export default function Page() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <section className={`mx-auto flex h-full min-h-0 max-w-7xl flex-col overflow-hidden rounded-2xl border shadow-sm xl:flex-row transition-all ${
+      <section className={`mx-auto flex h-full min-h-0 w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border shadow-sm xl:flex-row transition-all ${
         isDraggingOver 
           ? 'border-[#eb6f45f1] border-2 bg-[#fff3ee] shadow-lg' 
           : 'border-gray-100 bg-[#f7f4f3f1]'
       }`}>
-        <div className="flex min-h-0 flex-1 flex-col border-b border-gray-200 xl:max-w-85 xl:border-b-0 xl:border-r">
+        <div className="flex min-h-0 flex-1 flex-col border-b border-gray-200 xl:w-[480px] xl:flex-none xl:border-b-0 xl:border-r 2xl:w-[560px]">
           <div className="border-b border-gray-200 px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
@@ -369,12 +373,21 @@ export default function Page() {
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setIsMergeModalOpen(true)}
+                className="cursor-pointer rounded-lg bg-[#eb6f45f1] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[#fc632c]"
+              >
+                Merge-files
+              </button>
+
               <label
                 htmlFor="file-upload"
                 className="cursor-pointer rounded-lg bg-[#eb6f45f1] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[#fc632c]"
               >
                 Upload Files
               </label>
+              
               <input
                 id="file-upload"
                 type="file"
@@ -396,7 +409,7 @@ export default function Page() {
                 multiple
                 onChange={handleUpload}
                 className="hidden"
-                {...({ webkitdirectory: '' } as unknown as React.InputHTMLAttributes<HTMLInputElement>)}
+                {...({ webkitdirectory: '' } as unknown as InputHTMLAttributes<HTMLInputElement>)}
               />
 
               <button
@@ -432,7 +445,7 @@ export default function Page() {
           />
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col px-2 md:px-4 2xl:px-6">
           <Viewfile
             entry={selectedItem}
             isFullscreen={false}
@@ -440,6 +453,10 @@ export default function Page() {
           />
         </div>
       </section>
+
+      {isMergeModalOpen && (
+        <MergeFilesModal onClose={() => setIsMergeModalOpen(false)} />
+      )}
     </main>
   )
 }

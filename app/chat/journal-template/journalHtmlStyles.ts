@@ -34,4 +34,10 @@ export const JOURNAL_HTML_STYLES = `
   .ref-list { list-style: decimal; padding-left: 1.4em; font-size: 12px; line-height: 1.7; color: #111; }
   .ref-list li { margin-bottom: 8px; text-align: justify; word-break: break-all; }
   .ref-list a { color: #1a55a0; text-decoration: underline; word-break: break-all; }
+  @media print {
+    body { background: #fff; }
+    .page { box-shadow: none; margin: 0; width: 100%; min-height: auto; page-break-after: always; }
+    .page:last-child { page-break-after: avoid; }
+    @page { size: A4; margin: 12mm 14mm; }
+  }
 `;

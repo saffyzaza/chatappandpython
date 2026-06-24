@@ -10,6 +10,8 @@ async function ensureChatHistoryTable() {
     return;
   }
 
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS chat_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -20,7 +22,12 @@ async function ensureChatHistoryTable() {
       messages_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    )
+  `);
+
+  await pool.query(`
+    ALTER TABLE chat_sessions
+      ALTER COLUMN id SET DEFAULT gen_random_uuid()
   `);
 
   await pool.query(`
