@@ -42,6 +42,7 @@ services:
       - DB_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
       - OBSIDIAN_VAULT_PATH=/obsidian_vault/musya knowlads
+      - PDF_BUCKET=pdf-library
     volumes:
       - ../obsidian_vault:/obsidian_vault
     depends_on:

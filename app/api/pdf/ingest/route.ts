@@ -4,14 +4,24 @@ const PYTHON_API_URL = process.env.PYTHON_API_URL || 'http://localhost:8000'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { file_id: string; original_name?: string }
-    const { file_id, original_name = 'document.pdf' } = body
+    const body = await request.json() as {
+      file_id: string
+      original_name?: string
+      province?: string | null
+      district?: string | null
+      folder_name?: string | null
+    }
+    const { file_id, original_name = 'document.pdf', province, district, folder_name } = body
 
     if (!file_id) {
       return NextResponse.json({ error: 'file_id is required' }, { status: 400 })
     }
 
-    const url = `${PYTHON_API_URL}/pdf/ingest/${encodeURIComponent(file_id)}?original_name=${encodeURIComponent(original_name)}`
+    let url = `${PYTHON_API_URL}/pdf/ingest/${encodeURIComponent(file_id)}?original_name=${encodeURIComponent(original_name)}`
+    if (province) url += `&province=${encodeURIComponent(province)}`
+    if (district) url += `&district=${encodeURIComponent(district)}`
+    if (folder_name) url += `&folder_name=${encodeURIComponent(folder_name)}`
+
     const resp = await fetch(url, { method: 'POST' })
 
     if (!resp.ok) {
