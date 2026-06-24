@@ -16,19 +16,21 @@ export type StoredFile = {
   apa: ApaResult | null
 }
 
-/**
- * Upload a file to MinIO via the API
- */
 export async function saveFile(file: File, path: string): Promise<StoredFile> {
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('path', path)
+  const res = await fetch(`/api/files?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(file.name)}&mime=${encodeURIComponent(file.type)}&size=${file.size}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Length': file.size.toString()
+    },
+    body: file,
+  })
 
-  const res = await fetch('/api/files/upload', { method: 'POST', body: formData })
   if (!res.ok) {
-    const payload = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(payload?.error || 'Upload failed')
+    const errorData = await res.json().catch(() => ({}))
+    throw new Error(errorData.error || 'Upload failed')
   }
+
   return res.json() as Promise<StoredFile>
 }
 

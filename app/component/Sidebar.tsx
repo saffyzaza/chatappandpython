@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
-import { IoChevronBackCircleSharp, IoAddOutline, IoSearchOutline, IoChatbubblesOutline, IoPersonCircleOutline, IoTimeOutline, IoChevronDown, IoEllipsisHorizontal, IoLogOutOutline, IoPersonOutline, IoLibraryOutline } from "react-icons/io5"
+import { IoChevronBackCircleSharp, IoAddOutline, IoSearchOutline, IoChatbubblesOutline, IoPersonCircleOutline, IoTimeOutline, IoChevronDown, IoEllipsisHorizontal, IoLogOutOutline, IoPersonOutline, IoLibraryOutline, IoDocumentTextOutline } from "react-icons/io5"
 import { FiDatabase, FiFile, FiFolder } from "react-icons/fi"
 import clsx from "clsx"
 
@@ -59,6 +59,17 @@ const MENU_ITEMS = [
         href: '/journal',
         shortcut: '',
         icon: IoLibraryOutline,
+        iconSize: 16,
+        iconContainerClass: 'w-6 h-6 flex items-center justify-center shrink-0',
+        badge: '',
+        badgeClass: 'ml-auto bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px]'
+    },
+    {
+        key: 'pdf-knowledge',
+        label: 'PDF Knowledge',
+        href: '/pdf-upload',
+        shortcut: '',
+        icon: IoDocumentTextOutline,
         iconSize: 16,
         iconContainerClass: 'w-6 h-6 flex items-center justify-center shrink-0',
         badge: '',

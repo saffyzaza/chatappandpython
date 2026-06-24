@@ -29,18 +29,22 @@ services:
         condition: service_healthy
 
   python-ai:
-    build: ../python-ai
+    build: ../chatapi.python
     container_name: chatapp-python-ai
     restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
-      - ../python-ai/.env
-      - .env.local
+      - ../chatapi.python/.env.local
+      - .env
     environment:
       - MINIO_ENDPOINT=minio
       - DB_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
+      - OBSIDIAN_VAULT_PATH=/obsidian_vault/musya knowlads
+      - PDF_BUCKET=pdf-library
+    volumes:
+      - ../obsidian_vault:/obsidian_vault
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,7 +65,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../python-ai/database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../chatapi.python/database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d accident_db"]
       interval: 10s
