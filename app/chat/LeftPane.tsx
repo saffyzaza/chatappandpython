@@ -187,6 +187,41 @@ export const LeftPane = () => {
                         )}
                       </div>
                     )}
+                    {/* Obsidian notes referenced */}
+                    {msg.notesReferenced && msg.notesReferenced.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <p className="text-[11px] text-gray-400 font-medium mb-1.5">
+                          📋 อ้างอิง {msg.notesReferenced.length} notes จากคลังความรู้
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {msg.notesReferenced.map((n) => (
+                            <span
+                              key={n.note_id}
+                              className="inline-flex items-center gap-1 text-[10px] font-medium bg-[#e8f5ee] text-[#1a6b3c] border border-[#aad5b8] px-2 py-0.5 rounded-full"
+                            >
+                              {n.title || n.note_id}
+                              {n.province && (
+                                <span className="text-[#2e9e5b] opacity-70">· {n.province}</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                        {msg.followUps && msg.followUps.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {msg.followUps.map((q, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => { setDraft(q); }}
+                                className="text-[10px] bg-[#f0faf3] text-[#1a6b3c] border border-[#c8e6d0] px-2 py-0.5 rounded-full hover:bg-[#d8f0e4] transition-colors text-left"
+                              >
+                                {q}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {/* Source file citation */}
                     {msg.sourceFile && (
                       <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-1.5 flex-wrap text-[11px] text-gray-400">

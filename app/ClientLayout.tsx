@@ -23,6 +23,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/register") ||
     pathname.startsWith("/forgot-password");
 
+  const isFullScreenTool = pathname.startsWith("/musyaend");
+
   const shouldShowChatInput =
     !pathname.startsWith("/fileapa") &&
     !pathname.startsWith("/pdf-upload") &&
@@ -34,7 +36,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const shouldShowDatabasePanel =
     showDatabaseExplorer || pathname.startsWith("/fileapa");
 
-  if (isAuthPage) {
+  if (isAuthPage || isFullScreenTool) {
     return <main className="min-h-screen w-full">{children}</main>;
   }
 

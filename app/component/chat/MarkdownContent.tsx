@@ -96,7 +96,12 @@ const CHART_COLORS = [
 function BarChart({ headers, rows, colIndex }: { headers: string[]; rows: string[][]; colIndex: number }) {
   const values = rows.map((row) => parseNumber(row[colIndex] || "0"));
   const maxVal = Math.max(...values, 1);
-  const labels = rows.map((row) => row[0] || "");
+  // Use first non-numeric column (skip rank numbers)
+  const labelColIdx = headers.findIndex((_, i) =>
+    i !== colIndex && rows.length > 0 && !rows.every((r) => isNumericCell(r[i] || ""))
+  );
+  const labelCol = labelColIdx >= 0 ? labelColIdx : 0;
+  const labels = rows.map((row) => row[labelCol] || "");
 
   return (
     <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
@@ -128,7 +133,12 @@ function BarChart({ headers, rows, colIndex }: { headers: string[]; rows: string
 function PieChart({ headers, rows, colIndex }: { headers: string[]; rows: string[][]; colIndex: number }) {
   const values = rows.map((row) => parseNumber(row[colIndex] || "0"));
   const total = values.reduce((s, v) => s + v, 0) || 1;
-  const labels = rows.map((row) => row[0] || "");
+  // Use first non-numeric column (skip rank numbers)
+  const labelColIdx = headers.findIndex((_, i) =>
+    i !== colIndex && rows.length > 0 && !rows.every((r) => isNumericCell(r[i] || ""))
+  );
+  const labelCol = labelColIdx >= 0 ? labelColIdx : 0;
+  const labels = rows.map((row) => row[labelCol] || "");
 
   // Build SVG pie slices
   const cx = 80, cy = 80, r = 72;
@@ -221,7 +231,7 @@ function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) 
   const colIndex = numericColIndex + 1;
 
   return (
-    <div className="my-3">
+    <div className="my-3 w-fit">
       {hasNumeric && (
         <div className="flex justify-end mb-1 gap-1">
           {(["table", "bar", "pie"] as ChartView[]).map((v) => {
@@ -261,7 +271,9 @@ function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) 
                 <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}>
                   {row.map((cell, j) => (
                     <td key={j} className="px-2 py-1.5 text-gray-600 border-b border-gray-100 whitespace-nowrap">
-                      {renderInline(cell)}
+                      {cell.split(/<br\s*\/?>/i).map((part, pi, arr) => (
+                        <span key={pi}>{renderInline(part)}{pi < arr.length - 1 && <br />}</span>
+                      ))}
                     </td>
                   ))}
                 </tr>

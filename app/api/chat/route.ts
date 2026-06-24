@@ -5,15 +5,16 @@ type ChatBody = {
   sessionId?: string;
   prompt?: string;
   doc_type?: string;
+  tools?: string[];
   attached_files?: { id: string; name: string }[];
   [key: string]: unknown;
 };
 
+// Modes that go to a dedicated endpoint (single-tool operations)
 const MODE_ENDPOINT: Record<string, string> = {
   thaijo:   "/api/thaijo",
   compare:  "/api/compare",
   report:   "/api/report",
-  workplan: "/api/workplan",
   database: "/api/database",
 };
 
@@ -45,12 +46,20 @@ export async function POST(req: Request) {
     upstreamBody = {
       sessionId:      body.sessionId ?? "",
       prompt:         body.prompt ?? "",
+      history:        body.history ?? [],
       attached_files: body.attached_files ?? [],
       doc_type:       body.doc_type ?? "workplan",
     };
   } else {
+    // normal / stats / obsidian / multi → /api/analyze
     upstreamUrl = `${PYTHON_API}/api/analyze`;
-    upstreamBody = body;
+    upstreamBody = {
+      sessionId: body.sessionId ?? "",
+      prompt:    body.prompt ?? "",
+      history:   body.history ?? [],
+      mode,
+      tools:     body.tools ?? [],
+    };
   }
 
   const upstream = await fetch(upstreamUrl, {

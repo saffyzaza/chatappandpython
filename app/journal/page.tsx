@@ -31,6 +31,8 @@ export default function JournalLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [pdfId, setPdfId] = useState<string | null>(null);
+  const [wordId, setWordId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const fetchReports = useCallback(async () => {
@@ -74,6 +76,49 @@ export default function JournalLibraryPage() {
       alert("ลบไม่สำเร็จ");
     } finally {
       setDeletingId(null);
+    }
+  }, []);
+
+  const handleDownloadPdf = useCallback(async (id: string) => {
+    setPdfId(id);
+    try {
+      const res = await fetch(`/api/journal-reports/${id}`);
+      const data = await res.json() as { report: { html_content: string } };
+      const html = data.report.html_content;
+      const w = window.open("", "_blank");
+      if (!w) { alert("กรุณาอนุญาต popup"); return; }
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+      w.addEventListener("load", () => { w.focus(); w.print(); });
+      setTimeout(() => { try { w.focus(); w.print(); } catch { /* noop */ } }, 800);
+    } catch {
+      alert("ไม่สามารถสร้าง PDF ได้");
+    } finally {
+      setPdfId(null);
+    }
+  }, []);
+
+  const handleDownloadWord = useCallback(async (id: string, title: string) => {
+    setWordId(id);
+    try {
+      const res = await fetch(`/api/journal-reports/${id}`);
+      const data = await res.json() as { report: { html_content: string } };
+      const html = data.report.html_content;
+      const wordHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${title}</title></head><body>${html}</body></html>`;
+      const blob = new Blob(["\ufeff", wordHtml], { type: "application/msword" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${title}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("ไม่สามารถสร้างไฟล์ Word ได้");
+    } finally {
+      setWordId(null);
     }
   }, []);
 
@@ -179,7 +224,7 @@ export default function JournalLibraryPage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
                       <button
                         onClick={() => void handleOpen(r.id)}
                         disabled={openingId === r.id}
@@ -201,6 +246,44 @@ export default function JournalLibraryPage() {
                             เปิดรายงาน
                           </>
                         )}
+                      </button>
+                      {/* PDF */}
+                      <button
+                        onClick={() => void handleDownloadPdf(r.id)}
+                        disabled={pdfId === r.id}
+                        className="flex items-center justify-center gap-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition disabled:opacity-50"
+                        title="ดาวน์โหลด PDF"
+                      >
+                        {pdfId === r.id ? (
+                          <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                          </svg>
+                        ) : (
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                          </svg>
+                        )}
+                        PDF
+                      </button>
+                      {/* Word */}
+                      <button
+                        onClick={() => void handleDownloadWord(r.id, r.title)}
+                        disabled={wordId === r.id}
+                        className="flex items-center justify-center gap-1 bg-[#2b579a] hover:bg-[#1e3f7a] text-white text-xs font-semibold px-3 py-2 rounded-xl transition disabled:opacity-50"
+                        title="ดาวน์โหลด Word"
+                      >
+                        {wordId === r.id ? (
+                          <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                          </svg>
+                        ) : (
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                          </svg>
+                        )}
+                        Word
                       </button>
                       <button
                         onClick={() => void handleDelete(r.id)}
