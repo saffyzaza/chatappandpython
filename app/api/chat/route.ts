@@ -1,4 +1,6 @@
-const PYTHON_API = process.env.PYTHON_API_URL ?? "http://localhost:8000";
+import { requireAuth, internalHeaders, PYTHON_API_URL } from "@/lib/internalFetch";
+
+const PYTHON_API = PYTHON_API_URL;
 
 type ChatBody = {
   mode?: string;
@@ -19,6 +21,9 @@ const MODE_ENDPOINT: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
+  const auth = await requireAuth();
+  if (auth instanceof Response) return auth;
+
   const body = await req.json() as ChatBody;
   const mode = body.mode ?? "normal";
 
@@ -64,8 +69,9 @@ export async function POST(req: Request) {
 
   const upstream = await fetch(upstreamUrl, {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: internalHeaders({ "Content-Type": "application/json" }),
     body:    JSON.stringify(upstreamBody),
+    signal:  AbortSignal.timeout(600_000), // 10-minute max for long AI pipelines
   });
 
   if (!upstream.ok) {

@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['pdfjs-dist', 'pdf-parse', 'canvas', '@napi-rs/canvas'],
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '2gb',
+    },
+  },
 
   async rewrites() {
     // Internal rewrites → Route Handler at /api/python/[prefix]/[...path]

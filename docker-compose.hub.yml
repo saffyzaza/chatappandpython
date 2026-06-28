@@ -37,6 +37,8 @@ services:
       - MINIO_ENDPOINT=minio
       - DB_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - obsidian_knowledge:/app/src/obsidian_knowledge
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,3 +94,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  obsidian_knowledge:

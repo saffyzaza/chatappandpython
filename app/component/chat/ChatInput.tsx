@@ -227,6 +227,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
             error: undefined,
             lastUserPrompt: trimmedMessage,
             messages: nextMessages,
+            startedAt: Date.now(),
         };
 
         saveChatSessionState(sessionId, runningState);

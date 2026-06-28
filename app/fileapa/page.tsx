@@ -1,6 +1,7 @@
 'use client'
 
 import { ChangeEvent, DragEvent, InputHTMLAttributes, useEffect, useRef, useState } from 'react'
+import { FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { useRouter } from 'next/navigation'
 
 import Sidelist from './Sidelist'
@@ -79,30 +80,31 @@ export default function Page() {
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const [targetFolderPath, setTargetFolderPath] = useState<string>('')
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const folderUploadInputRef = useRef<HTMLInputElement>(null)
+
+  const loadFiles = async () => {
+    try {
+      const storedFiles = await getAllFiles()
+      const ts = Date.now()
+      const loadedItems: UploadedEntry[] = storedFiles.map((storedFile) => ({
+        id: storedFile.id,
+        name: storedFile.name,
+        path: storedFile.path,
+        extension: storedFile.extension,
+        size: storedFile.size,
+        previewKind: storedFile.previewKind,
+        objectUrl: `/api/files/${storedFile.id}?t=${ts}`,
+      }))
+      setItems(loadedItems)
+      setSelectedId(prev => prev ?? (loadedItems[0]?.id ?? null))
+    } catch (error) {
+      console.error('Error loading files from MinIO:', error)
+    }
+  }
 
   // Load files from MinIO on mount
   useEffect(() => {
-    const loadFiles = async () => {
-      try {
-        const storedFiles = await getAllFiles()
-        const loadedItems: UploadedEntry[] = storedFiles.map((storedFile) => ({
-          id: storedFile.id,
-          name: storedFile.name,
-          path: storedFile.path,
-          extension: storedFile.extension,
-          size: storedFile.size,
-          previewKind: storedFile.previewKind,
-          objectUrl: `/api/files/${storedFile.id}`,
-        }))
-
-        setItems(loadedItems)
-        setSelectedId(loadedItems[0]?.id ?? null)
-      } catch (error) {
-        console.error('Error loading files from MinIO:', error)
-      }
-    }
-
     loadFiles()
   }, [])
 
@@ -354,10 +356,11 @@ export default function Page() {
       onDragLeave={handleDragLeave}
     >
       <section className={`mx-auto flex h-full min-h-0 w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl border shadow-sm xl:flex-row transition-all ${
-        isDraggingOver 
-          ? 'border-[#eb6f45f1] border-2 bg-[#fff3ee] shadow-lg' 
+        isDraggingOver
+          ? 'border-[#eb6f45f1] border-2 bg-[#fff3ee] shadow-lg'
           : 'border-gray-100 bg-[#f7f4f3f1]'
       }`}>
+        {sidebarOpen && (
         <div className="flex min-h-0 flex-1 flex-col border-b border-gray-200 xl:w-[480px] xl:flex-none xl:border-b-0 xl:border-r 2xl:w-[560px]">
           <div className="border-b border-gray-200 px-4 py-3">
             <div className="flex items-center justify-between">
@@ -367,9 +370,19 @@ export default function Page() {
                 </p>
                 <h1 className="text-base font-semibold text-gray-800">Document Explorer</h1>
               </div>
-              <span className="rounded-full bg-[#eb6f45f1] px-2.5 py-0.5 text-[11px] font-medium text-white">
-                {items.length}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-[#eb6f45f1] px-2.5 py-0.5 text-[11px] font-medium text-white">
+                  {items.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(false)}
+                  title="ซ่อน sidebar"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition hover:bg-[#ffece5] hover:text-[#eb6f45f1]"
+                >
+                  <FiChevronLeft className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
@@ -444,8 +457,19 @@ export default function Page() {
             onUploadToFolder={handleUploadToFolder}
           />
         </div>
+        )}
 
-        <div className="flex min-h-0 flex-1 flex-col px-2 md:px-4 2xl:px-6">
+        <div className="relative flex min-h-0 flex-1 flex-col px-2 md:px-4 2xl:px-6">
+          {!sidebarOpen && (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              title="แสดง sidebar"
+              className="absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-[#ffece5] hover:text-[#eb6f45f1]"
+            >
+              <FiChevronRight className="h-4 w-4" />
+            </button>
+          )}
           <Viewfile
             entry={selectedItem}
             isFullscreen={false}
@@ -455,7 +479,10 @@ export default function Page() {
       </section>
 
       {isMergeModalOpen && (
-        <MergeFilesModal onClose={() => setIsMergeModalOpen(false)} />
+        <MergeFilesModal
+          onClose={() => setIsMergeModalOpen(false)}
+          onSuccess={() => loadFiles()}
+        />
       )}
     </main>
   )

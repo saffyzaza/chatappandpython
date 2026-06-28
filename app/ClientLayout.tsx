@@ -25,6 +25,10 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
   const isFullScreenTool = pathname.startsWith("/musyaend");
 
+  const isNoSidebar =
+    pathname.startsWith("/fileapa") ||
+    pathname.startsWith("/pdf-upload");
+
   const shouldShowChatInput =
     !pathname.startsWith("/fileapa") &&
     !pathname.startsWith("/pdf-upload") &&
@@ -38,6 +42,16 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
   if (isAuthPage || isFullScreenTool) {
     return <main className="min-h-screen w-full">{children}</main>;
+  }
+
+  if (isNoSidebar) {
+    return (
+      <div className="flex h-screen overflow-hidden">
+        <main className="flex flex-col flex-1 h-full w-full relative">
+          <div className="flex-1 min-h-0 overflow-y-auto">{children}</div>
+        </main>
+      </div>
+    );
   }
 
   return (

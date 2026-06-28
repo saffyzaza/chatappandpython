@@ -6,6 +6,12 @@ import type { AgentStep } from "../../chat/chatTypes";
 interface AgentPipelinePanelProps {
   steps: AgentStep[];
   isLive?: boolean;
+  elapsedSeconds?: number;
+}
+
+function formatElapsed(s: number) {
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 }
 
 function Spinner() {
@@ -78,7 +84,7 @@ function StepRow({ step, isLast, isLive }: { step: AgentStep; isLast: boolean; i
   );
 }
 
-export function AgentPipelinePanel({ steps, isLive = false }: AgentPipelinePanelProps) {
+export function AgentPipelinePanel({ steps, isLive = false, elapsedSeconds }: AgentPipelinePanelProps) {
   const [expanded, setExpanded] = useState(false);
   if (!steps || steps.length === 0) return null;
 
@@ -91,6 +97,11 @@ export function AgentPipelinePanel({ steps, isLive = false }: AgentPipelinePanel
         <div className="flex items-center gap-2 text-gray-400 mb-2 text-xs">
           <Spinner />
           <span>กำลังวิเคราะห์...</span>
+          {elapsedSeconds !== undefined && elapsedSeconds > 0 && (
+            <span className="ml-auto font-mono tabular-nums text-[11px] text-gray-400">
+              {formatElapsed(elapsedSeconds)}
+            </span>
+          )}
         </div>
       ) : (
         <button

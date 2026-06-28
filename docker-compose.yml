@@ -48,7 +48,7 @@ services:
       - OBSIDIAN_DEFAULT_VAULT=health_region_10
       - OBSIDIAN_ENABLED=true
     volumes:
-      - ../chatapi.python/src/obsidian_knowledge:/app/src/obsidian_knowledge:ro
+      - ../chatapi.python/src/obsidian_knowledge:/app/src/obsidian_knowledge
     depends_on:
       postgres:
         condition: service_healthy

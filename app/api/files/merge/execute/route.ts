@@ -14,7 +14,11 @@ function getTmpDir(): string {
 }
 
 function parseBuffer(buffer: Buffer): { headers: string[]; rows: string[][] } {
-  const wb = XLSX.read(buffer, { type: 'buffer' })
+  // XLSX = ZIP (PK\x03\x04), XLS = OLE (0xD0 0xCF) — everything else is UTF-8 CSV
+  const isBinary = (buffer[0] === 0x50 && buffer[1] === 0x4B) || (buffer[0] === 0xD0 && buffer[1] === 0xCF)
+  const wb = isBinary
+    ? XLSX.read(buffer, { type: 'buffer' })
+    : XLSX.read(buffer.toString('utf-8').replace(/^﻿/, ''), { type: 'string' })
   const ws = wb.Sheets[wb.SheetNames[0]]
   const all = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' }) as unknown[][]
   if (!all.length) return { headers: [], rows: [] }
@@ -44,9 +48,34 @@ function headerSimilarity(a: string, b: string): number {
   return 0
 }
 
-// Check whether any header is a year indicator
 function hasYearColumn(headers: string[]): boolean {
   return headers.some(h => /ปี|year|fiscal|งบประมาณ/i.test(h))
+}
+
+/** Detect Latin-1 mojibake from mis-encoded UTF-8 Thai/Latin text */
+function isGarbledRow(row: string[]): boolean {
+  return row.some(cell => /[ÃÂ]/.test(cell) || /à[¸¹]/.test(cell))
+}
+
+/**
+ * Clean rows from encoding artifacts and year-range duplicates:
+ * 1. Remove rows with garbled encoding
+ * 2. If mix of range years ("2565-2566") and single years ("2566"), keep only single-year rows
+ */
+function cleanRows(rows: string[][], headers: string[]): string[][] {
+  let cleaned = rows.filter(r => !isGarbledRow(r))
+
+  const yearColIdx = headers.findIndex(h => /ปี|year/i.test(h))
+  if (yearColIdx === -1) return cleaned
+
+  const hasRangeYear = cleaned.some(r => /^\d{4}-\d{4}$/.test((r[yearColIdx] ?? '').trim()))
+  const hasSingleYear = cleaned.some(r => /^\d{4}$/.test((r[yearColIdx] ?? '').trim()))
+
+  if (hasRangeYear && hasSingleYear) {
+    cleaned = cleaned.filter(r => /^\d{4}$/.test((r[yearColIdx] ?? '').trim()))
+  }
+
+  return cleaned
 }
 
 // Extract year label from filename  e.g. "data_2565-2569.csv" → "2565-2569", "data_2570.csv" → "2570"
@@ -59,25 +88,20 @@ function extractYearLabel(name: string): string {
 }
 
 // Build merged output filename by combining year ranges
-// e.g. existing="data 2565.csv" + new="data 2566.csv" → "data 2565-2566.csv"
-// e.g. existing="data 2565-2569.csv" + new="data 2570.csv" → "data 2565-2570.csv"
 function buildMergedFileName(existingName: string, newName: string): string {
   const ext = existingName.match(/\.[^.]+$/)?.[0] ?? ''
   const base = existingName.slice(0, existingName.length - ext.length)
 
-  // Start year: earliest year in existing filename
   const exRangeM = base.match(/(2\d{3})\s*[-–]\s*(2\d{3})/)
   const exSingleM = base.match(/(2\d{3})/)
   const startYear = exRangeM ? exRangeM[1] : (exSingleM?.[1] ?? '')
 
-  // End year: latest year in new filename
   const newRangeM = newName.match(/(2\d{3})\s*[-–]\s*(2\d{3})/)
   const newSingleM = newName.match(/(2\d{3})/)
   const endYear = newRangeM ? newRangeM[2] : (newSingleM?.[1] ?? '')
 
   if (!startYear || !endYear || startYear === endYear) return existingName
 
-  // Replace year pattern in base name (range first, then single)
   const newBase = exRangeM
     ? base.replace(/(2\d{3})\s*[-–]\s*(2\d{3})/, `${startYear}-${endYear}`)
     : base.replace(/(2\d{3})/, `${startYear}-${endYear}`)
@@ -90,7 +114,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json() as {
       existingFileId?: string
       tempFileId?: string
-      newFileName?: string   // original uploaded filename — used for year extraction
+      newFileName?: string
     }
     const { existingFileId, tempFileId, newFileName } = body
 
@@ -104,7 +128,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Temp file not found — please re-upload' }, { status: 404 })
     }
 
-    // Fetch existing file metadata to get its original name (for year extraction)
     const existingStat = await minioClient.statObject(BUCKET_NAME, existingFileId).catch(() => null)
     const existingFileName = existingStat
       ? decodeURIComponent((existingStat.metaData['name'] as string) || existingFileId)
@@ -115,8 +138,11 @@ export async function POST(request: NextRequest) {
       Promise.resolve(fs.readFileSync(tmpPath)),
     ])
 
-    const existing = parseBuffer(existingBuf)
-    const incoming = parseBuffer(tempBuf)
+    const existingRaw = parseBuffer(existingBuf)
+    const incomingRaw = parseBuffer(tempBuf)
+
+    const existing = { headers: existingRaw.headers, rows: cleanRows(existingRaw.rows, existingRaw.headers) }
+    const incoming = { headers: incomingRaw.headers, rows: cleanRows(incomingRaw.rows, incomingRaw.headers) }
 
     // ── Column mapping ───────────────────────────────────────────────
     const usedIncoming = new Set<number>()
@@ -147,13 +173,17 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Auto year column ─────────────────────────────────────────────
-    const needYearCol = !hasYearColumn(existing.headers) && !hasYearColumn(incoming.headers)
+    const existingHasYear = hasYearColumn(existing.headers)
+    const incomingHasYear = hasYearColumn(incoming.headers)
+    const needYearCol = !existingHasYear && !incomingHasYear
     const YEAR_COL = 'ปี_ข้อมูล'
     const existingYearLabel = extractYearLabel(existingFileName)
     const newYearLabel = extractYearLabel(newFileName ?? '')
 
+    // When existing has year col but incoming doesn't, auto-fill from filename
+    const fillYearFromFilename = existingHasYear && !incomingHasYear && newYearLabel !== ''
+
     // ── Build merged structure ───────────────────────────────────────
-    // Year column goes first (if needed), then existing headers, then new-only headers
     const mergedHeaders = needYearCol
       ? [YEAR_COL, ...existing.headers, ...newOnlyHeaders]
       : [...existing.headers, ...newOnlyHeaders]
@@ -170,7 +200,10 @@ export async function POST(request: NextRequest) {
       const base = [
         ...existing.headers.map(eh => {
           const idx = existingToIncomingIdx.get(eh) ?? -1
-          return idx !== -1 ? (r[idx] ?? '') : ''
+          if (idx !== -1) return r[idx] ?? ''
+          // No match — if year col and can derive from filename, fill automatically
+          if (fillYearFromFilename && /ปี|year|fiscal|งบประมาณ/i.test(eh)) return newYearLabel
+          return ''
         }),
         ...newOnlyIdxMap.map(i => r[i] ?? ''),
       ]
@@ -179,7 +212,30 @@ export async function POST(request: NextRequest) {
 
     const existingMergedRows = existing.rows.map(buildExistingRow)
     const incomingMergedRows = incoming.rows.map(buildIncomingRow)
-    const allMergedRows = [...existingMergedRows, ...incomingMergedRows]
+
+    // ── Dedup: replace existing rows for the same year as incoming ────
+    const yearColInMerged = needYearCol
+      ? 0
+      : mergedHeaders.findIndex(h => /ปี|year|fiscal|งบประมาณ/i.test(h))
+
+    const targetYear = newYearLabel || (
+      yearColInMerged !== -1 && incomingMergedRows.length > 0
+        ? (incomingMergedRows[0][yearColInMerged] ?? '').trim()
+        : ''
+    )
+
+    let filteredExistingRows = existingMergedRows
+    let replacedRowCount = 0
+
+    if (yearColInMerged !== -1 && targetYear) {
+      const before = existingMergedRows.length
+      filteredExistingRows = existingMergedRows.filter(
+        r => (r[yearColInMerged] ?? '').trim() !== targetYear
+      )
+      replacedRowCount = before - filteredExistingRows.length
+    }
+
+    const allMergedRows = [...filteredExistingRows, ...incomingMergedRows]
 
     // ── Write merged CSV to temp file ────────────────────────────────
     const ws = XLSX.utils.aoa_to_sheet([mergedHeaders, ...allMergedRows])
@@ -192,12 +248,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       mergedTempKey,
       headers: mergedHeaders,
-      previewExisting: existingMergedRows.slice(0, PREVIEW_ROWS),
+      previewExisting: filteredExistingRows.slice(0, PREVIEW_ROWS),
       previewNew: incomingMergedRows.slice(0, PREVIEW_ROWS),
-      existingRowCount: existing.rows.length,
+      existingRowCount: filteredExistingRows.length,
+      replacedRowCount,
       newRowCount: incoming.rows.length,
       totalRowCount: allMergedRows.length,
       yearColumnAdded: needYearCol,
+      yearFilledFromFilename: fillYearFromFilename,
       existingYearLabel,
       newYearLabel,
       suggestedOutputName,

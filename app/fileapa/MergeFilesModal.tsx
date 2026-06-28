@@ -150,9 +150,9 @@ function StepBar({ current, isNewFile }: { current: FlowStep; isNewFile: boolean
 // ──────────────────────────────────────────────
 // Main component
 // ──────────────────────────────────────────────
-type Props = { onClose: () => void }
+type Props = { onClose: () => void; onSuccess?: () => void }
 
-export default function MergeFilesModal({ onClose }: Props) {
+export default function MergeFilesModal({ onClose, onSuccess }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Flow
@@ -181,6 +181,8 @@ export default function MergeFilesModal({ onClose }: Props) {
   const [pipelineStep, setPipelineStep]       = useState(-1)
   const [pipelineDone, setPipelineDone]       = useState(false)
   const [yearColumnAdded, setYearColumnAdded] = useState(false)
+  const [yearFilledFromFilename, setYearFilledFromFilename] = useState(false)
+  const [replacedRowCount, setReplacedRowCount] = useState(0)
   const [existingYearLabel, setExistingYearLabel] = useState('')
   const [newYearLabel, setNewYearLabel]       = useState('')
   const [suggestedOutputName, setSuggestedOutputName] = useState('')
@@ -323,9 +325,11 @@ export default function MergeFilesModal({ onClose }: Props) {
         previewExisting: string[][]
         previewNew: string[][]
         existingRowCount: number
+        replacedRowCount: number
         newRowCount: number
         totalRowCount: number
         yearColumnAdded: boolean
+        yearFilledFromFilename: boolean
         existingYearLabel: string
         newYearLabel: string
         suggestedOutputName: string
@@ -335,9 +339,11 @@ export default function MergeFilesModal({ onClose }: Props) {
       setPreviewExistingRows(data.previewExisting)
       setPreviewNewRows(data.previewNew)
       setExistingRowCount(data.existingRowCount)
+      setReplacedRowCount(data.replacedRowCount ?? 0)
       setNewRowCount(data.newRowCount)
       setTotalRowCount(data.totalRowCount)
       setYearColumnAdded(data.yearColumnAdded)
+      setYearFilledFromFilename(data.yearFilledFromFilename ?? false)
       setExistingYearLabel(data.existingYearLabel)
       setNewYearLabel(data.newYearLabel)
       setSuggestedOutputName(data.suggestedOutputName)
@@ -385,6 +391,7 @@ export default function MergeFilesModal({ onClose }: Props) {
       const data = await res.json() as { savedPath: string }
       setSavedPath(data.savedPath)
       setIsSaved(true)
+      onSuccess?.()
     } catch (err) {
       setApiError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -412,6 +419,8 @@ export default function MergeFilesModal({ onClose }: Props) {
     setPipelineStep(-1)
     setPipelineDone(false)
     setYearColumnAdded(false)
+    setYearFilledFromFilename(false)
+    setReplacedRowCount(0)
     setExistingYearLabel('')
     setNewYearLabel('')
     setSuggestedOutputName('')
@@ -766,11 +775,21 @@ export default function MergeFilesModal({ onClose }: Props) {
                     <span>✅</span>
                     <div>
                       <p>Merge สำเร็จ! ข้อมูลรวม {totalRowCount.toLocaleString()} แถว — ตรวจสอบใน Preview ก่อนบันทึก</p>
+                      {replacedRowCount > 0 && newYearLabel && (
+                        <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-orange-700">
+                          <span className="rounded-full bg-orange-100 px-2 py-0.5">🔄 แทนที่ {replacedRowCount.toLocaleString()} แถวปี {newYearLabel} ด้วยข้อมูลใหม่</span>
+                        </p>
+                      )}
                       {yearColumnAdded && (
                         <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-blue-700">
                           <span className="rounded-full bg-blue-100 px-2 py-0.5">📅 เพิ่มคอลัมน์ "ปี_ข้อมูล" อัตโนมัติ</span>
                           {existingYearLabel && <span className="text-gray-500">ไฟล์เดิม → {existingYearLabel}</span>}
                           {newYearLabel && <span className="text-gray-500">ไฟล์ใหม่ → {newYearLabel}</span>}
+                        </p>
+                      )}
+                      {yearFilledFromFilename && newYearLabel && (
+                        <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-blue-700">
+                          <span className="rounded-full bg-blue-100 px-2 py-0.5">📅 เติมปี "{newYearLabel}" ให้แถวใหม่อัตโนมัติ (จากชื่อไฟล์)</span>
                         </p>
                       )}
                     </div>
@@ -800,8 +819,9 @@ export default function MergeFilesModal({ onClose }: Props) {
                   {/* Stats — merge only */}
                   {!isNewFile && (
                     <div className="space-y-2">
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className={`grid gap-2 ${replacedRowCount > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
                         {[
+                          ...(replacedRowCount > 0 ? [{ label: `ลบออก (ปี ${newYearLabel})`, value: `-${replacedRowCount.toLocaleString()}`, color: 'text-orange-600' }] : []),
                           { label: `แถวเดิม${existingYearLabel ? ` (${existingYearLabel})` : ''}`, value: existingRowCount.toLocaleString(), color: 'text-gray-700' },
                           { label: `แถวใหม่${newYearLabel ? ` (${newYearLabel})` : ''}`, value: `+${newRowCount.toLocaleString()}`, color: 'text-green-600' },
                           { label: 'รวมทั้งหมด', value: totalRowCount.toLocaleString(), color: 'text-[#eb6f45f1]' },
@@ -812,10 +832,22 @@ export default function MergeFilesModal({ onClose }: Props) {
                           </div>
                         ))}
                       </div>
+                      {replacedRowCount > 0 && newYearLabel && (
+                        <div className="flex items-center gap-2 rounded-lg border border-orange-100 bg-orange-50 px-3 py-2 text-[11px] text-orange-700">
+                          <span>🔄</span>
+                          <span>ลบ <strong>{replacedRowCount.toLocaleString()} แถว</strong> ของปี <strong>{newYearLabel}</strong> ออกจากไฟล์เดิม แล้วแทนด้วยข้อมูลใหม่</span>
+                        </div>
+                      )}
                       {yearColumnAdded && (
                         <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
                           <span>📅</span>
                           <span>เพิ่มคอลัมน์ <strong>ปี_ข้อมูล</strong> อัตโนมัติ เพราะไม่พบคอลัมน์ปีในไฟล์ทั้งสอง</span>
+                        </div>
+                      )}
+                      {yearFilledFromFilename && newYearLabel && (
+                        <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
+                          <span>📅</span>
+                          <span>เติมปี <strong>{newYearLabel}</strong> ให้แถวใหม่ทุกแถวอัตโนมัติ — ดึงจากชื่อไฟล์ที่อัพโหลด</span>
                         </div>
                       )}
                     </div>

@@ -49,6 +49,7 @@ export type ChatSessionState = {
   messages: ChatSessionMessage[];
   lastUserPrompt?: string;
   error?: string;
+  startedAt?: number; // Unix ms — set when request starts, used for elapsed timer
 };
 
 export type ChatRouteRequest = {
