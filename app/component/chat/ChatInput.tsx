@@ -123,6 +123,8 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef  = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    // true เมื่อหน้ากำลัง refresh/ปิด — ใช้กันไม่ให้เขียน "failed" ทับ state "running"
+    const isUnloadingRef = useRef(false);
     const [uploadingFile, setUploadingFile]   = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const attachedFiles = useSyncExternalStore(
@@ -188,6 +190,17 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 clearDraft();
             }
         });
+    }, []);
+
+    // ตั้ง flag เมื่อหน้ากำลังถูก refresh/ปิด — beforeunload จะยิงก่อน fetch ถูก abort
+    useEffect(() => {
+        const markUnloading = () => { isUnloadingRef.current = true; };
+        window.addEventListener("beforeunload", markUnloading);
+        window.addEventListener("pagehide", markUnloading);
+        return () => {
+            window.removeEventListener("beforeunload", markUnloading);
+            window.removeEventListener("pagehide", markUnloading);
+        };
     }, []);
 
     useEffect(() => {
@@ -427,6 +440,16 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 }
             }
         } catch (error) {
+            // ── refresh / ปิดแท็บ / abort ─────────────────────────────────────
+            // อย่าเขียน "failed" ทับ — ปล่อย status="running" ไว้ ให้ backend รันต่อ
+            // จนจบและบันทึกผลลง DB แล้ว recovery polling จะโหลดผลกลับมาเอง
+            const isNavigationAbort =
+                isUnloadingRef.current ||
+                (error instanceof Error && error.name === "AbortError");
+            if (isNavigationAbort) {
+                return; // finally ยังทำงาน (setIsSubmitting(false))
+            }
+
             clearStreamingState(sessionId);
             const errorMessage = error instanceof Error ? error.message : "ไม่สามารถติดต่อ AI ได้";
             const failedState: ChatSessionState = {

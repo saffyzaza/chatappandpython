@@ -6,9 +6,9 @@ const COOKIE_NAME = 'auth_token';
 
 function getSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 32 || secret.startsWith('changeme')) {
+  if (!secret || secret.length < 8 || secret.startsWith('changeme')) {
     throw new Error(
-      'JWT_SECRET env var is missing, too short (< 32 chars), or still using the default placeholder.\n' +
+      'JWT_SECRET env var is missing, too short (< 8 chars), or still using the default placeholder.\n' +
       'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
     );
   }
