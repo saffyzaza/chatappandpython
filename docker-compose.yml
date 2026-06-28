@@ -20,7 +20,10 @@ services:
       - MINIO_USE_SSL=false
       - MINIO_BUCKET=fileapa
       - DATABASE_URL=postgresql://postgres:1234@postgres:5432/musyadata
-      - JWT_SECRET=changeme-replace-with-long-random-string
+      # ⚠️ PROD: เปลี่ยนเป็นค่ายาวสุ่มจริง node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      - JWT_SECRET=musya-dev-local-jwt-do-NOT-commit-REPLACE-before-production-deploy
+      # ต้องตรงกับ INTERNAL_API_KEY ของ python-ai
+      - INTERNAL_API_KEY=dev-internal-musya-2f8a3b1c9e7d4f6a-CHANGE-FOR-PROD
       - NEXT_PUBLIC_APP_URL=http://localhost:3000
     depends_on:
       python-ai:
@@ -47,6 +50,8 @@ services:
       - OBSIDIAN_VAULT_PATH=/app/src/obsidian_knowledge
       - OBSIDIAN_DEFAULT_VAULT=health_region_10
       - OBSIDIAN_ENABLED=true
+      # ต้องตรงกับ INTERNAL_API_KEY ของ frontend
+      - INTERNAL_API_KEY=dev-internal-musya-2f8a3b1c9e7d4f6a-CHANGE-FOR-PROD
     volumes:
       - ../chatapi.python/src/obsidian_knowledge:/app/src/obsidian_knowledge
     depends_on:
