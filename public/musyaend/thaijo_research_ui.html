@@ -1,0 +1,2169 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThaiJO Research Report â€” Test UI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'IBM Plex Sans Thai', sans-serif; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .pulse-dot { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .article-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+        .article-card { transition: all 0.2s ease; }
+        .progress-step.active { border-left-color: #6366f1; }
+        .progress-step.done { border-left-color: #10b981; }
+        .progress-step.error { border-left-color: #ef4444; }
+        .tab-btn.active { background: white; color: #4f46e5; box-shadow: 0 2px 8px rgba(79,70,229,0.15); }
+        .prose h2 { font-size: 1.25rem; font-weight: 700; margin: 1.5rem 0 0.75rem; color: #1e293b; }
+        .prose h3 { font-size: 1.1rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: #334155; }
+        .prose p { margin: 0.5rem 0; line-height: 1.8; }
+        .prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; }
+        .prose th { background: #f1f5f9; padding: 0.5rem; text-align: left; border: 1px solid #e2e8f0; font-weight: 600; }
+        .prose td { padding: 0.5rem; border: 1px solid #e2e8f0; }
+        .prose ul, .prose ol { padding-left: 1.5rem; margin: 0.5rem 0; }
+        .prose li { margin: 0.25rem 0; }
+        .prose blockquote { border-left: 3px solid #6366f1; padding-left: 1rem; color: #64748b; margin: 0.75rem 0; }
+        .citation-tag { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+        .citation-tag:hover { opacity: 0.85; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="sticky top-0 z-20 bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="text-2xl">ðŸ“š</div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight">ThaiJO Research Report</h1>
+                    <p class="text-xs text-indigo-200">à¸„à¹‰à¸™à¸«à¸²à¹à¸¥à¸°à¸ªà¸±à¸‡à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¸šà¸—à¸„à¸§à¸²à¸¡à¸§à¸´à¸Šà¸²à¸à¸²à¸£à¸ˆà¸²à¸ TCI-THAIJO</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <div id="health-badge" class="flex items-center gap-1.5 bg-white/10 rounded-full px-3 py-1 text-xs">
+                    <span id="health-dot" class="w-2 h-2 rounded-full bg-gray-400"></span>
+                    <span id="health-text">Checking...</span>
+                </div>
+            </div>
+        </div>
+        <!-- Tabs -->
+        <div class="max-w-7xl mx-auto px-4 pb-2 flex gap-2">
+            <button onclick="switchTab('search')" id="tab-search" class="tab-btn active px-4 py-1.5 rounded-lg text-sm font-medium transition-all">
+                ðŸ” à¸„à¹‰à¸™à¸«à¸²à¸šà¸—à¸„à¸§à¸²à¸¡
+            </button>
+            <button onclick="switchTab('report')" id="tab-report" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-white/70 hover:text-white transition-all">
+                ðŸ“ à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¸§à¸´à¸ˆà¸±à¸¢
+            </button>
+            <button onclick="switchTab('status')" id="tab-status" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-white/70 hover:text-white transition-all">
+                âš™ï¸ à¸ªà¸–à¸²à¸™à¸°à¸£à¸°à¸šà¸š
+            </button>
+            <button onclick="switchTab('cache')" id="tab-cache" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-white/70 hover:text-white transition-all">
+                ðŸ—„ï¸ Cache
+            </button>
+            <button onclick="switchTab('agent-test')" id="tab-agent-test" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-white/70 hover:text-white transition-all">
+                ðŸ§ª à¸—à¸”à¸ªà¸­à¸š Agent
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+
+        <!-- ==================== TAB 1: Search ==================== -->
+        <div id="panel-search" class="space-y-6">
+            <!-- Search Form -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">ðŸ” à¸„à¹‰à¸™à¸«à¸²à¸šà¸—à¸„à¸§à¸²à¸¡à¸§à¸´à¸Šà¸²à¸à¸²à¸£ ThaiJO</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-600 mb-1">à¸„à¸³à¸„à¹‰à¸™à¸«à¸² (2-5 à¸„à¸³)</label>
+                        <input id="search-term" type="text" placeholder="à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡ à¸–à¸™à¸™"
+                            class="w-full border rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">à¸ˆà¸³à¸™à¸§à¸™à¸œà¸¥à¸¥à¸±à¸žà¸˜à¹Œ</label>
+                        <select id="search-size" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-300 outline-none">
+                            <option value="3">3 à¸šà¸—à¸„à¸§à¸²à¸¡</option>
+                            <option value="5" selected>5 à¸šà¸—à¸„à¸§à¸²à¸¡</option>
+                            <option value="10">10 à¸šà¸—à¸„à¸§à¸²à¸¡</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">à¹‚à¸«à¸¡à¸”à¸„à¹‰à¸™à¸«à¸²</label>
+                        <div class="flex items-center gap-3 pt-2">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="search-strict" checked class="w-4 h-4 text-indigo-600 rounded">
+                                <span class="text-sm text-gray-700">Strict mode</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <!-- Quick Search Examples -->
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <span class="text-xs text-gray-500 pt-1">à¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡:</span>
+                    <button onclick="quickSearch('à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡ à¸–à¸™à¸™')" class="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full hover:bg-indigo-100 transition">à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸à¸—à¸²à¸‡à¸–à¸™à¸™</button>
+                    <button onclick="quickSearch('à¹‚à¸£à¸„à¸‹à¸¶à¸¡à¹€à¸¨à¸£à¹‰à¸² à¸œà¸¹à¹‰à¸ªà¸¹à¸‡à¸­à¸²à¸¢à¸¸')" class="text-xs bg-purple-50 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-100 transition">à¸‹à¸¶à¸¡à¹€à¸¨à¸£à¹‰à¸²à¸œà¸¹à¹‰à¸ªà¸¹à¸‡à¸­à¸²à¸¢à¸¸</button>
+                    <button onclick="quickSearch('à¹€à¸šà¸²à¸«à¸§à¸²à¸™ à¸›à¹‰à¸­à¸‡à¸à¸±à¸™ à¸žà¸¤à¸•à¸´à¸à¸£à¸£à¸¡')" class="text-xs bg-violet-50 text-violet-700 px-3 py-1 rounded-full hover:bg-violet-100 transition">à¸›à¹‰à¸­à¸‡à¸à¸±à¸™à¹€à¸šà¸²à¸«à¸§à¸²à¸™</button>
+                    <button onclick="quickSearch('PM2.5 à¸ªà¸¸à¸‚à¸ à¸²à¸ž à¸£à¸°à¸šà¸šà¸«à¸²à¸¢à¹ƒà¸ˆ')" class="text-xs bg-blue-50 text-blue-700 px-3 py-1 rounded-full hover:bg-blue-100 transition">PM2.5 & à¸ªà¸¸à¸‚à¸ à¸²à¸ž</button>
+                    <button onclick="quickSearch('à¸«à¸¡à¸§à¸à¸™à¸´à¸£à¸ à¸±à¸¢ à¸¡à¸­à¹€à¸•à¸­à¸£à¹Œà¹„à¸‹à¸„à¹Œ à¸„à¸§à¸²à¸¡à¸›à¸¥à¸­à¸”à¸ à¸±à¸¢')" class="text-xs bg-green-50 text-green-700 px-3 py-1 rounded-full hover:bg-green-100 transition">à¸«à¸¡à¸§à¸à¸™à¸´à¸£à¸ à¸±à¸¢</button>
+                </div>
+                <div class="mt-4 flex justify-end">
+                    <button onclick="searchThaiJO()" id="btn-search" class="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition flex items-center gap-2 text-sm">
+                        <span>ðŸ”</span> à¸„à¹‰à¸™à¸«à¸² ThaiJO
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search Results -->
+            <div id="search-results" class="hidden space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-bold text-gray-800">à¸œà¸¥à¸¥à¸±à¸žà¸˜à¹Œà¸à¸²à¸£à¸„à¹‰à¸™à¸«à¸²</h3>
+                    <span id="search-result-count" class="text-sm text-gray-500"></span>
+                </div>
+                <div id="search-result-cards" class="space-y-4"></div>
+            </div>
+
+            <!-- Search Loading -->
+            <div id="search-loading" class="hidden">
+                <div class="bg-white rounded-xl shadow-sm border p-8 text-center">
+                    <div class="flex justify-center gap-1 mb-3">
+                        <span class="w-3 h-3 bg-indigo-500 rounded-full pulse-dot"></span>
+                        <span class="w-3 h-3 bg-purple-500 rounded-full pulse-dot" style="animation-delay:0.2s"></span>
+                        <span class="w-3 h-3 bg-violet-500 rounded-full pulse-dot" style="animation-delay:0.4s"></span>
+                    </div>
+                    <p class="text-gray-600 text-sm">à¸à¸³à¸¥à¸±à¸‡à¸„à¹‰à¸™à¸«à¸²à¸šà¸—à¸„à¸§à¸²à¸¡à¸ˆà¸²à¸ TCI-THAIJO...</p>
+                    <p class="text-gray-400 text-xs mt-1">à¸­à¸²à¸ˆà¹ƒà¸Šà¹‰à¹€à¸§à¸¥à¸² 10-60 à¸§à¸´à¸™à¸²à¸—à¸µ (AI à¸ªà¸£à¸¸à¸›à¹€à¸™à¸·à¹‰à¸­à¸«à¸²à¸šà¸—à¸„à¸§à¸²à¸¡)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 2: Research Report ==================== -->
+        <div id="panel-report" class="hidden space-y-6">
+            <!-- Report Form -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">ðŸ“ à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¸—à¸šà¸—à¸§à¸™à¸§à¸£à¸£à¸“à¸à¸£à¸£à¸¡</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">à¸«à¸±à¸§à¸‚à¹‰à¸­à¸§à¸´à¸ˆà¸±à¸¢</label>
+                        <input id="report-topic" type="text"
+                            placeholder="à¹€à¸Šà¹ˆà¸™ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸à¸—à¸²à¸‡à¸–à¸™à¸™à¹ƒà¸™à¸›à¸£à¸°à¹€à¸—à¸¨à¹„à¸—à¸¢"
+                            class="w-full border rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-500 outline-none">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">à¸ˆà¸³à¸™à¸§à¸™à¸šà¸—à¸„à¸§à¸²à¸¡à¸ªà¸¹à¸‡à¸ªà¸¸à¸”</label>
+                            <input id="report-max-articles" type="range" min="5" max="20" value="15" class="w-full accent-indigo-600"
+                                oninput="document.getElementById('max-articles-val').textContent = this.value">
+                            <div class="flex justify-between text-xs text-gray-400 mt-1">
+                                <span>5</span>
+                                <span id="max-articles-val" class="font-bold text-indigo-600">15</span>
+                                <span>20</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">à¸ˆà¸³à¸™à¸§à¸™ search queries</label>
+                            <select id="report-max-queries" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-300 outline-none">
+                                <option value="2">2 queries</option>
+                                <option value="3">3 queries</option>
+                                <option value="4" selected>4 queries</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">à¸„à¸°à¹à¸™à¸™à¸„à¸§à¸²à¸¡à¹€à¸à¸µà¹ˆà¸¢à¸§à¸‚à¹‰à¸­à¸‡à¸‚à¸±à¹‰à¸™à¸•à¹ˆà¸³</label>
+                            <select id="report-min-relevance" class="w-full border rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-300 outline-none">
+                                <option value="3">3 (à¸à¸§à¹‰à¸²à¸‡)</option>
+                                <option value="5" selected>5 (à¸›à¸²à¸™à¸à¸¥à¸²à¸‡)</option>
+                                <option value="7">7 (à¹€à¸‚à¹‰à¸¡à¸‡à¸§à¸”)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Quick Topics -->
+                    <div class="flex flex-wrap gap-2">
+                        <span class="text-xs text-gray-500 pt-1">à¸«à¸±à¸§à¸‚à¹‰à¸­à¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡:</span>
+                        <button onclick="quickTopic('à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸à¸—à¸²à¸‡à¸–à¸™à¸™à¹ƒà¸™à¸›à¸£à¸°à¹€à¸—à¸¨à¹„à¸—à¸¢')" class="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full hover:bg-indigo-100 transition">à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸à¸—à¸²à¸‡à¸–à¸™à¸™</button>
+                        <button onclick="quickTopic('à¹‚à¸£à¸„à¸‹à¸¶à¸¡à¹€à¸¨à¸£à¹‰à¸²à¹à¸¥à¸°à¸ à¸²à¸§à¸°à¸‹à¸¶à¸¡à¹€à¸¨à¸£à¹‰à¸²à¹ƒà¸™à¸œà¸¹à¹‰à¸ªà¸¹à¸‡à¸­à¸²à¸¢à¸¸à¹„à¸—à¸¢')" class="text-xs bg-purple-50 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-100 transition">à¸‹à¸¶à¸¡à¹€à¸¨à¸£à¹‰à¸²à¸œà¸¹à¹‰à¸ªà¸¹à¸‡à¸­à¸²à¸¢à¸¸</button>
+                        <button onclick="quickTopic('à¸œà¸¥à¸à¸£à¸°à¸—à¸šà¸‚à¸­à¸‡ PM2.5 à¸•à¹ˆà¸­à¸ªà¸¸à¸‚à¸ à¸²à¸žà¸£à¸°à¸šà¸šà¸—à¸²à¸‡à¹€à¸”à¸´à¸™à¸«à¸²à¸¢à¹ƒà¸ˆ')" class="text-xs bg-blue-50 text-blue-700 px-3 py-1 rounded-full hover:bg-blue-100 transition">PM2.5 & à¸ªà¸¸à¸‚à¸ à¸²à¸ž</button>
+                        <button onclick="quickTopic('à¸à¸²à¸£à¸›à¹‰à¸­à¸‡à¸à¸±à¸™à¹‚à¸£à¸„à¹€à¸šà¸²à¸«à¸§à¸²à¸™à¸Šà¸™à¸´à¸”à¸—à¸µà¹ˆ 2 à¸”à¹‰à¸§à¸¢à¸à¸²à¸£à¸›à¸£à¸±à¸šà¸žà¸¤à¸•à¸´à¸à¸£à¸£à¸¡')" class="text-xs bg-green-50 text-green-700 px-3 py-1 rounded-full hover:bg-green-100 transition">à¸›à¹‰à¸­à¸‡à¸à¸±à¸™à¹€à¸šà¸²à¸«à¸§à¸²à¸™</button>
+                    </div>
+                    <div class="flex justify-end">
+                        <button onclick="generateReport()" id="btn-report" class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-8 py-3 rounded-lg font-bold hover:from-indigo-700 hover:to-purple-700 transition flex items-center gap-2">
+                            <span>ðŸ“</span> à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¸§à¸´à¸ˆà¸±à¸¢
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Timeline -->
+            <div id="report-progress" class="hidden bg-white rounded-xl shadow-sm border p-6">
+                <h3 class="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+                    <span class="pulse-dot inline-block w-2.5 h-2.5 bg-indigo-500 rounded-full"></span>
+                    à¸à¸³à¸¥à¸±à¸‡à¸›à¸£à¸°à¸¡à¸§à¸¥à¸œà¸¥...
+                </h3>
+                <div id="progress-timeline" class="space-y-3"></div>
+                <div id="progress-summary" class="hidden mt-4 pt-4 border-t">
+                    <div class="grid grid-cols-4 gap-4 text-center">
+                        <div>
+                            <div id="stat-queries" class="text-2xl font-bold text-indigo-600">â€”</div>
+                            <div class="text-xs text-gray-500">Queries</div>
+                        </div>
+                        <div>
+                            <div id="stat-found" class="text-2xl font-bold text-purple-600">â€”</div>
+                            <div class="text-xs text-gray-500">à¸šà¸—à¸„à¸§à¸²à¸¡à¸žà¸š</div>
+                        </div>
+                        <div>
+                            <div id="stat-selected" class="text-2xl font-bold text-green-600">â€”</div>
+                            <div class="text-xs text-gray-500">à¸„à¸±à¸”à¹€à¸¥à¸·à¸­à¸</div>
+                        </div>
+                        <div>
+                            <div id="stat-time" class="text-2xl font-bold text-orange-600">â€”</div>
+                            <div class="text-xs text-gray-500">à¸§à¸´à¸™à¸²à¸—à¸µ</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Report Output -->
+            <div id="report-output" class="hidden space-y-6">
+                <!-- Report Content -->
+                <div class="bg-white rounded-xl shadow-sm border p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold text-gray-800">ðŸ“„ à¸£à¸²à¸¢à¸‡à¸²à¸™à¸—à¸šà¸—à¸§à¸™à¸§à¸£à¸£à¸“à¸à¸£à¸£à¸¡</h3>
+                        <button onclick="copyReport()" class="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                            ðŸ“‹ à¸„à¸±à¸”à¸¥à¸­à¸
+                        </button>
+                    </div>
+                    <div id="report-content" class="prose max-w-none"></div>
+                </div>
+
+                <!-- Charts -->
+                <div id="report-charts" class="hidden">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">ðŸ“Š à¸à¸£à¸²à¸Ÿà¸›à¸£à¸°à¸à¸­à¸š</h3>
+                    <div id="chart-container" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+                </div>
+
+                <!-- Article Summary Table -->
+                <div id="report-tables" class="hidden bg-white rounded-xl shadow-sm border p-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">ðŸ“‹ à¸•à¸²à¸£à¸²à¸‡à¸ªà¸£à¸¸à¸›à¸šà¸—à¸„à¸§à¸²à¸¡</h3>
+                    <div id="table-container" class="overflow-x-auto"></div>
+                </div>
+
+                <!-- Citations / Bibliography -->
+                <div id="report-citations" class="hidden bg-white rounded-xl shadow-sm border p-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">ðŸ“š à¹€à¸­à¸à¸ªà¸²à¸£à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡ (APA 7th Edition)</h3>
+                    <div id="citations-list" class="space-y-3"></div>
+                </div>
+
+                <!-- Follow-ups -->
+                <div id="report-followups" class="hidden bg-white rounded-xl shadow-sm border p-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">â“ à¸„à¸³à¸–à¸²à¸¡à¸§à¸´à¸ˆà¸±à¸¢à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡</h3>
+                    <div id="followups-list" class="space-y-2"></div>
+                </div>
+
+                <!-- Raw JSON -->
+                <details class="bg-white rounded-xl shadow-sm border p-6">
+                    <summary class="text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700">ðŸ”§ Raw JSON Response</summary>
+                    <pre id="report-raw-json" class="mt-4 bg-gray-50 p-4 rounded-lg text-xs overflow-x-auto max-h-96 overflow-y-auto"></pre>
+                </details>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 3: Status ==================== -->
+        <div id="panel-status" class="hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">âš™ï¸ à¸ªà¸–à¸²à¸™à¸°à¸£à¸°à¸šà¸š ThaiJO</h2>
+                <div class="space-y-4">
+                    <button onclick="checkThaiJOStatus()" class="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition text-sm">
+                        ðŸ”„ à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸ªà¸–à¸²à¸™à¸°
+                    </button>
+                    <div id="status-result" class="hidden">
+                        <div id="status-cards" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent Health -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">ðŸ¥ à¸ªà¸–à¸²à¸™à¸° Agent Backend</h2>
+                <button onclick="checkAgentHealth()" class="bg-green-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-green-700 transition text-sm">
+                    ðŸ”„ à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š Health
+                </button>
+                <div id="agent-health-result" class="hidden mt-4"></div>
+            </div>
+
+            <!-- API Info -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">ðŸ“¡ API Endpoints</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-gray-50">
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">Method</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">Path</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">Description</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr><td class="px-4 py-2"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold">POST</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/search</td><td class="px-4 py-2 text-gray-600">à¸„à¹‰à¸™à¸«à¸²à¸šà¸—à¸„à¸§à¸²à¸¡ ThaiJO</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">GET</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/status</td><td class="px-4 py-2 text-gray-600">à¸ªà¸–à¸²à¸™à¸° ThaiJO service</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold">POST</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/research</td><td class="px-4 py-2 text-gray-600">à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¸§à¸´à¸ˆà¸±à¸¢</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-bold">POST</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/research/stream</td><td class="px-4 py-2 text-gray-600">à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™ (SSE)</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">GET</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/cache</td><td class="px-4 py-2 text-gray-600">à¸£à¸²à¸¢à¸à¸²à¸£ Cache</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">GET</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/cache/stats</td><td class="px-4 py-2 text-gray-600">à¸ªà¸–à¸´à¸•à¸´ Cache</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">GET</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/cache/{key}</td><td class="px-4 py-2 text-gray-600">à¸”à¸¹à¸ªà¸£à¸¸à¸›à¹€à¸•à¹‡à¸¡</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold">DELETE</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/cache/{key}</td><td class="px-4 py-2 text-gray-600">à¸¥à¸šà¸£à¸²à¸¢à¸à¸²à¸£ Cache</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                            <tr><td class="px-4 py-2"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold">DELETE</span></td><td class="px-4 py-2 font-mono text-xs">/api/thaijo/cache</td><td class="px-4 py-2 text-gray-600">à¸¥à¹‰à¸²à¸‡ Cache à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”</td><td class="px-4 py-2 text-green-600">âœ… Active</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Evidence Debug Panel -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-gray-800">ðŸ” Evidence Registry Debug</h2>
+                    <div class="flex gap-2">
+                        <button onclick="loadEvidenceDebug(false)" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+                            ðŸ“‹ à¹‚à¸«à¸¥à¸”à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”
+                        </button>
+                        <button onclick="loadEvidenceDebug(true)" class="bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-700 transition">
+                            âš ï¸ URL à¸œà¸´à¸”à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
+                        </button>
+                        <button onclick="fixEvidenceUrls()" id="btn-fix-evidence" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition">
+                            ðŸ”§ Fix Download URLs
+                        </button>
+                    </div>
+                </div>
+                <div id="evidence-fix-result" class="hidden mb-3 p-3 rounded-lg border text-sm"></div>
+                <div id="evidence-debug-stats" class="hidden grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-gray-50 rounded-lg p-3 text-center">
+                        <div id="ev-total" class="text-2xl font-bold text-gray-700">â€”</div>
+                        <div class="text-xs text-gray-500">à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”</div>
+                    </div>
+                    <div class="bg-red-50 rounded-lg p-3 text-center">
+                        <div id="ev-bad" class="text-2xl font-bold text-red-600">â€”</div>
+                        <div class="text-xs text-gray-500">URL à¸œà¸´à¸”</div>
+                    </div>
+                </div>
+                <div id="evidence-debug-table" class="hidden overflow-x-auto">
+                    <table class="w-full text-xs">
+                        <thead>
+                            <tr class="bg-gray-50 text-left">
+                                <th class="px-3 py-2 font-medium text-gray-600">ID</th>
+                                <th class="px-3 py-2 font-medium text-gray-600">Title</th>
+                                <th class="px-3 py-2 font-medium text-gray-600">open_url</th>
+                                <th class="px-3 py-2 font-medium text-gray-600">source_ref</th>
+                                <th class="px-3 py-2 font-medium text-gray-600 text-center">à¸ªà¸–à¸²à¸™à¸°</th>
+                            </tr>
+                        </thead>
+                        <tbody id="evidence-debug-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+                <div id="evidence-debug-empty" class="hidden text-sm text-gray-400 text-center py-4">à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥</div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 4: Cache Inspector ==================== -->
+        <div id="panel-cache" class="hidden space-y-6">
+            <!-- Cache Stats -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold text-gray-800">ðŸ—„ï¸ Redis Cache Inspector</h2>
+                    <div class="flex items-center gap-2">
+                        <button onclick="loadCache()" id="btn-cache-load" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-1">
+                            ðŸ”„ à¹‚à¸«à¸¥à¸” Cache
+                        </button>
+                        <button onclick="exportCache()" id="btn-cache-export" class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition flex items-center gap-1">
+                            ðŸ“¥ Export
+                        </button>
+                        <button onclick="clearAllCache()" id="btn-cache-clear" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition flex items-center gap-1">
+                            ðŸ—‘ï¸ à¸¥à¹‰à¸²à¸‡à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”
+                        </button>
+                        <button onclick="syncEvidenceRegistry()" id="btn-cache-sync" class="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-700 transition flex items-center gap-1">
+                            ðŸ”— Sync Evidence
+                        </button>
+                    </div>
+                </div>
+                <!-- Sync Evidence Result Banner -->
+                <div id="sync-evidence-result" class="hidden mb-4 p-3 rounded-lg border text-sm"></div>
+                <!-- Stats Bar -->
+                <div class="grid grid-cols-3 gap-4 mb-4">
+                    <div class="bg-indigo-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-indigo-700" id="cache-total-keys">â€”</div>
+                        <div class="text-xs text-indigo-500">Cached Items</div>
+                    </div>
+                    <div class="bg-purple-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-purple-700" id="cache-total-size">â€”</div>
+                        <div class="text-xs text-purple-500">Total Size</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-3 text-center">
+                        <div class="text-2xl font-bold text-green-700" id="cache-redis-status">â€”</div>
+                        <div class="text-xs text-green-500">Redis Status</div>
+                    </div>
+                </div>
+                <!-- Search/Filter -->
+                <div class="flex gap-3">
+                    <input id="cache-filter" type="text" placeholder="ðŸ” à¸„à¹‰à¸™à¸«à¸²à¹ƒà¸™ cache (à¸„à¸³à¹ƒà¸™à¸ªà¸£à¸¸à¸›)..." class="flex-1 border rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none" oninput="filterCache()">
+                    <span id="cache-filter-count" class="text-xs text-gray-400 pt-3"></span>
+                </div>
+            </div>
+
+            <!-- Cache Table -->
+            <div id="cache-table-container" class="bg-white rounded-xl shadow-sm border overflow-hidden">
+                <div id="cache-loading" class="hidden p-8 text-center text-gray-500 text-sm">
+                    <span class="pulse-dot inline-block w-3 h-3 bg-indigo-500 rounded-full mr-2"></span> à¸à¸³à¸¥à¸±à¸‡à¹‚à¸«à¸¥à¸”...
+                </div>
+                <div id="cache-empty" class="hidden p-8 text-center text-gray-400 text-sm">
+                    ðŸ“­ à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹ƒà¸™ Cache
+                </div>
+                <div id="cache-table-wrapper" class="hidden overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">#</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">Key</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">à¸ªà¸£à¸¸à¸›à¹€à¸™à¸·à¹‰à¸­à¸«à¸² (Preview)</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">Size</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cache-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+                <!-- Pagination -->
+                <div id="cache-pagination" class="hidden flex items-center justify-between px-4 py-3 bg-gray-50 border-t">
+                    <button onclick="cachePrevPage()" id="btn-cache-prev" class="text-sm px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 transition disabled:opacity-50" disabled>â† à¸à¹ˆà¸­à¸™à¸«à¸™à¹‰à¸²</button>
+                    <span id="cache-page-info" class="text-xs text-gray-500"></span>
+                    <button onclick="cacheNextPage()" id="btn-cache-next" class="text-sm px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 transition disabled:opacity-50" disabled>à¸–à¸±à¸”à¹„à¸› â†’</button>
+                </div>
+            </div>
+
+            <!-- Expanded Summary Panel -->
+            <div id="cache-detail-panel" class="hidden bg-white rounded-xl shadow-sm border p-6 fade-in">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-md font-bold text-gray-800">ðŸ“„ à¸ªà¸£à¸¸à¸›à¹€à¸™à¸·à¹‰à¸­à¸«à¸²à¹€à¸•à¹‡à¸¡</h3>
+                    <div class="flex items-center gap-2">
+                        <button onclick="copyCacheSummary()" class="bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-indigo-200 transition">ðŸ“‹ à¸„à¸±à¸”à¸¥à¸­à¸</button>
+                        <button onclick="deleteCacheEntry()" class="bg-red-100 text-red-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-200 transition">ðŸ—‘ï¸ à¸¥à¸š</button>
+                        <button onclick="closeCacheDetail()" class="bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 transition">âœ• à¸›à¸´à¸”</button>
+                    </div>
+                </div>
+                <div class="bg-gray-50 rounded-lg p-2 mb-2">
+                    <span class="text-xs text-gray-500">Key: </span><span id="cache-detail-key" class="font-mono text-xs text-gray-700"></span>
+                </div>
+                <div id="cache-detail-summary" class="prose max-h-96 overflow-y-auto text-sm leading-relaxed text-gray-700 whitespace-pre-wrap"></div>
+            </div>
+
+            <!-- Data Flow Diagram -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">ðŸ”„ Data Flow: ThaiJO Search Pipeline</h2>
+                <div class="flex items-center justify-center gap-2 flex-wrap text-sm">
+                    <div class="bg-blue-100 text-blue-800 px-4 py-3 rounded-lg font-medium text-center">
+                        <div class="text-lg">ðŸ‘¤</div>
+                        <div>User</div>
+                    </div>
+                    <div class="text-gray-400 text-xl">â†’</div>
+                    <div class="bg-indigo-100 text-indigo-800 px-4 py-3 rounded-lg font-medium text-center">
+                        <div class="text-lg">ðŸ¤–</div>
+                        <div>Agent API</div>
+                        <div class="text-xs text-indigo-500">:8000</div>
+                    </div>
+                    <div class="text-gray-400 text-xl">â†’</div>
+                    <div class="bg-purple-100 text-purple-800 px-4 py-3 rounded-lg font-medium text-center">
+                        <div class="text-lg">ðŸ”¬</div>
+                        <div>ThaiJO Âµservice</div>
+                        <div class="text-xs text-purple-500">:8505</div>
+                    </div>
+                    <div class="text-gray-400 text-xl">â†’</div>
+                    <div class="bg-amber-100 text-amber-800 px-4 py-3 rounded-lg font-medium text-center">
+                        <div class="text-lg">ðŸŒ</div>
+                        <div>TCI-THAIJO</div>
+                        <div class="text-xs text-amber-500">tci-thaijo.org</div>
+                    </div>
+                    <div class="text-gray-400 text-xl">â†’</div>
+                    <div class="bg-red-100 text-red-800 px-4 py-3 rounded-lg font-medium text-center">
+                        <div class="text-lg">ðŸ§ </div>
+                        <div>GPT-4.1</div>
+                        <div class="text-xs text-red-500">Summarize</div>
+                    </div>
+                    <div class="text-gray-400 text-xl">â†’</div>
+                    <div class="bg-green-100 text-green-800 px-4 py-3 rounded-lg font-medium text-center">
+                        <div class="text-lg">ðŸ—„ï¸</div>
+                        <div>Redis Cache</div>
+                        <div class="text-xs text-green-500">:6379</div>
+                    </div>
+                </div>
+                <div class="mt-3 text-center text-xs text-gray-400">
+                    ThaiJO Âµservice à¸„à¹‰à¸™à¸«à¸²à¸ˆà¸²à¸ TCI-THAIJO â†’ à¸”à¸¶à¸‡ PDF link + APA citation â†’ à¸ªà¸£à¸¸à¸›à¸”à¹‰à¸§à¸¢ GPT-4.1 â†’ à¹€à¸à¹‡à¸šà¹ƒà¸™ Redis (key: pdf_cache:&lt;sha256&gt;)
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 5: Agent Test ==================== -->
+        <div id="panel-agent-test" class="hidden space-y-6">
+
+            <!-- Section A: Direct API Test -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-1">ðŸ” Section A â€” Direct API Test</h2>
+                <p class="text-xs text-gray-500 mb-4">à¸—à¸”à¸ªà¸­à¸š <code class="bg-gray-100 px-1 rounded">POST /api/thaijo/search</code> à¹‚à¸”à¸¢à¸•à¸£à¸‡ Â· à¹à¸ªà¸”à¸‡ title, apa_*, pdf_url à¸ˆà¸£à¸´à¸‡ Â· badge ðŸŸ¢ CACHE HIT à¹€à¸¡à¸·à¹ˆà¸­ &lt;500ms</p>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">à¸„à¸³à¸„à¹‰à¸™à¸«à¸²</label>
+                        <input id="at-term" type="text" value="à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡ à¸–à¸™à¸™ à¸¡à¸¸à¸à¸”à¸²à¸«à¸²à¸£"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">à¸ˆà¸³à¸™à¸§à¸™</label>
+                        <select id="at-size" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="10">10</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end pb-1 gap-4">
+                        <label class="flex items-center gap-2 cursor-pointer text-sm">
+                            <input type="checkbox" id="at-strict" checked class="w-4 h-4 text-indigo-600 rounded">
+                            <span class="text-gray-700">Strict</span>
+                        </label>
+                        <button onclick="testDirectApi()" id="btn-at-api"
+                            class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+                            ðŸ” à¸—à¸”à¸ªà¸­à¸š
+                        </button>
+                    </div>
+                </div>
+                <div id="at-api-result" class="space-y-3"></div>
+            </div>
+
+            <!-- Section B: Multi-Query Searcher -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-1">âš¡ Section B â€” Multi-Query Searcher</h2>
+                <p class="text-xs text-gray-500 mb-4">à¸ˆà¸³à¸¥à¸­à¸‡ ThaiJO Multi-Query Searcher Agent Â· à¸£à¸±à¸™ query à¸—à¸µà¸¥à¸°à¸šà¸£à¸£à¸—à¸±à¸” Â· dedup à¸”à¹‰à¸§à¸¢ pdf_url Â· à¹à¸ªà¸”à¸‡à¸œà¸¥à¸•à¸²à¸£à¸²à¸‡ per-query</p>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Search Queries (1 query à¸•à¹ˆà¸­à¸šà¸£à¸£à¸—à¸±à¸”)</label>
+                        <textarea id="at-queries" rows="4"
+                            class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none font-mono"
+                            placeholder="à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡ à¸–à¸™à¸™ à¸¡à¸¸à¸à¸”à¸²à¸«à¸²à¸£&#10;à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡ à¸–à¸™à¸™ à¸¢à¹‚à¸ªà¸˜à¸£&#10;à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸à¸—à¸²à¸‡à¸–à¸™à¸™ à¸žà¸¤à¸•à¸´à¸à¸£à¸£à¸¡à¹€à¸ªà¸µà¹ˆà¸¢à¸‡">à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡ à¸–à¸™à¸™ à¸¡à¸¸à¸à¸”à¸²à¸«à¸²à¸£
+à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸ à¸›à¸±à¸ˆà¸ˆà¸±à¸¢à¹€à¸ªà¸µà¹ˆà¸¢à¸‡ à¸–à¸™à¸™ à¸¢à¹‚à¸ªà¸˜à¸£
+à¸­à¸¸à¸šà¸±à¸•à¸´à¹€à¸«à¸•à¸¸à¸—à¸²à¸‡à¸–à¸™à¸™ à¸žà¸¤à¸•à¸´à¸à¸£à¸£à¸¡à¹€à¸ªà¸µà¹ˆà¸¢à¸‡</textarea>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">à¸ˆà¸³à¸™à¸§à¸™/query</label>
+                            <select id="at-multi-size" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 outline-none">
+                                <option value="3">3</option>
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                            </select>
+                        </div>
+                        <button onclick="testMultiQuery()" id="btn-at-multi"
+                            class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 transition">
+                            â–¶ à¸£à¸±à¸™ Multi-Query
+                        </button>
+                    </div>
+                </div>
+                <div id="at-multi-result" class="space-y-4"></div>
+            </div>
+
+            <!-- Section C: Sync Evidence -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-1">ðŸ”— Section C â€” Sync Evidence Registry</h2>
+                <p class="text-xs text-gray-500 mb-4">à¸­à¸±à¸›à¹€à¸”à¸• <code class="bg-gray-100 px-1 rounded">evidence_registry</code> à¸ˆà¸²à¸ ThaiJO search cache Â· <code class="bg-gray-100 px-1 rounded">POST /api/thaijo/sync-evidence</code></p>
+                <button onclick="testSyncEvidence()" id="btn-at-sync"
+                    class="bg-amber-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-amber-700 transition flex items-center gap-2">
+                    ðŸ”— Sync Evidence Registry
+                </button>
+                <div id="at-sync-result" class="mt-4 space-y-3"></div>
+            </div>
+
+            <!-- Section D: Evidence Registry Audit -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-1">ðŸ” Section D â€” Evidence Registry Audit</h2>
+                <p class="text-xs text-gray-500 mb-4">à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸š <code class="bg-gray-100 px-1 rounded">open_url</code> à¸‚à¸­à¸‡ ThaiJO à¹ƒà¸™ evidence_registry à¸à¸±à¸š thaijo_search_cache Â· <code class="bg-gray-100 px-1 rounded">GET /api/thaijo/evidence-audit</code></p>
+                <button onclick="auditEvidence()" id="btn-at-audit"
+                    class="bg-purple-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 transition flex items-center gap-2">
+                    ðŸ” Audit Evidence Registry
+                </button>
+                <div id="at-audit-result" class="mt-4 space-y-3"></div>
+            </div>
+
+            <!-- Section E: ThaiJO Evidence Sync -->
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-1">ðŸ”„ Section E â€” ThaiJO Evidence Sync</h2>
+                <p class="text-xs text-gray-500 mb-4">
+                    à¹€à¸•à¸´à¸¡ null fields à¹ƒà¸™ <code class="bg-gray-100 px-1 rounded">thaijo_search_cache</code>
+                    (rule-based + LLM) à¹à¸¥à¹‰à¸§ register à¸—à¸¸à¸ article à¸¥à¸‡
+                    <code class="bg-gray-100 px-1 rounded">evidence_registry</code> à¸žà¸£à¹‰à¸­à¸¡ APA Â·
+                    <code class="bg-gray-100 px-1 rounded">POST /api/thaijo/evidence-sync</code>
+                </p>
+                <div class="flex items-center gap-3 mb-4">
+                    <select id="at-sync-model" class="text-sm border rounded-lg px-3 py-2 bg-white text-gray-700">
+                        <option value="claude-haiku-4-5-20251001">claude-haiku-4-5 (à¹€à¸£à¹‡à¸§ Â· à¸–à¸¹à¸)</option>
+                        <option value="claude-sonnet-4-6">claude-sonnet-4-6 (à¹à¸¡à¹ˆà¸™à¸à¸§à¹ˆà¸²)</option>
+                    </select>
+                    <button onclick="runEvidenceSync()" id="btn-at-ev-sync"
+                        class="bg-teal-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-teal-700 transition flex items-center gap-2">
+                        ðŸ”„ Sync Evidence
+                    </button>
+                </div>
+                <div id="at-ev-sync-result" class="mt-2 space-y-3"></div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-7xl mx-auto px-4 py-6 text-center text-xs text-gray-400">
+        Musya Agent â€” ThaiJO Research Report Test UI | v1.0 | 2026-04-16
+    </footer>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let chartInstances = [];
+
+        // ======================== TAB SWITCHING ========================
+        function switchTab(tab) {
+            ['search', 'report', 'status', 'cache', 'agent-test'].forEach(t => {
+                document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+                document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+                if (t !== tab) {
+                    document.getElementById(`tab-${t}`).classList.add('text-white/70');
+                } else {
+                    document.getElementById(`tab-${t}`).classList.remove('text-white/70');
+                }
+            });
+        }
+
+        // ======================== QUICK HELPERS ========================
+        function quickSearch(term) {
+            document.getElementById('search-term').value = term;
+            searchThaiJO();
+        }
+
+        function quickTopic(topic) {
+            document.getElementById('report-topic').value = topic;
+        }
+
+        // ======================== THAIJO SEARCH ========================
+        async function searchThaiJO() {
+            const term = document.getElementById('search-term').value.trim();
+            if (!term) { alert('à¸à¸£à¸¸à¸“à¸²à¹ƒà¸ªà¹ˆà¸„à¸³à¸„à¹‰à¸™à¸«à¸²'); return; }
+
+            const size = parseInt(document.getElementById('search-size').value);
+            const strict = document.getElementById('search-strict').checked;
+
+            document.getElementById('search-loading').classList.remove('hidden');
+            document.getElementById('search-results').classList.add('hidden');
+            document.getElementById('btn-search').disabled = true;
+            document.getElementById('btn-search').textContent = 'â³ à¸à¸³à¸¥à¸±à¸‡à¸„à¹‰à¸™à¸«à¸²...';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ term, size, page: 1, strict })
+                });
+                const data = await res.json();
+                displaySearchResults(data, term);
+            } catch (err) {
+                alert('Error: ' + err.message);
+            } finally {
+                document.getElementById('search-loading').classList.add('hidden');
+                document.getElementById('btn-search').disabled = false;
+                document.getElementById('btn-search').innerHTML = '<span>ðŸ”</span> à¸„à¹‰à¸™à¸«à¸² ThaiJO';
+            }
+        }
+
+        function displaySearchResults(data, term) {
+            const container = document.getElementById('search-result-cards');
+            container.innerHTML = '';
+
+            const count = data.count || 0;
+            const results = data.results || [];
+            document.getElementById('search-result-count').textContent =
+                `à¸žà¸š ${count} à¸šà¸—à¸„à¸§à¸²à¸¡ à¸ªà¸³à¸«à¸£à¸±à¸š "${term}"`;
+
+            if (data.error) {
+                container.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">
+                        âŒ ${data.error}
+                    </div>`;
+                document.getElementById('search-results').classList.remove('hidden');
+                return;
+            }
+
+            if (results.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-700 text-sm">
+                        âš ï¸ à¹„à¸¡à¹ˆà¸žà¸šà¸šà¸—à¸„à¸§à¸²à¸¡ â€” à¸¥à¸­à¸‡à¹ƒà¸Šà¹‰à¸„à¸³à¸„à¹‰à¸™à¸­à¸·à¹ˆà¸™ à¸«à¸£à¸·à¸­à¸›à¸´à¸” Strict mode
+                    </div>`;
+                document.getElementById('search-results').classList.remove('hidden');
+                return;
+            }
+
+            results.forEach((article, i) => {
+                const card = document.createElement('div');
+                card.className = 'article-card bg-white rounded-xl border p-5 fade-in';
+                card.style.animationDelay = `${i * 0.1}s`;
+
+                const url = article.pdf_url || '';
+                const urlHtml = url
+                    ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener"
+                            class="text-indigo-600 underline text-xs break-all hover:text-indigo-800"
+                            title="${escapeHtml(url)}">${escapeHtml(url)}</a>`
+                    : `<span class="text-gray-400 text-xs">à¹„à¸¡à¹ˆà¸¡à¸µ URL</span>`;
+
+                const titleHtml = article.title
+                    ? `<p class="font-semibold text-gray-800 text-sm mb-1">${escapeHtml(article.title)}</p>`
+                    : `<p class="font-semibold text-red-500 text-sm mb-1">[à¹„à¸¡à¹ˆà¸¡à¸µà¸Šà¸·à¹ˆà¸­à¸šà¸—à¸„à¸§à¸²à¸¡]</p>`;
+
+                const metaHtml = [
+                    article.apa_authors ? `<span>ðŸ‘¤ ${escapeHtml(article.apa_authors)}</span>` : '',
+                    article.apa_year    ? `<span>ðŸ“… ${escapeHtml(article.apa_year)}</span>`    : '',
+                    article.apa_journal ? `<span>ðŸ“° ${escapeHtml(article.apa_journal)}</span>` : '',
+                ].filter(Boolean).join('<span class="text-gray-300 mx-1">Â·</span>');
+
+                const refHtml = article.reference
+                    ? `<div class="mt-3 bg-indigo-50 rounded-lg p-3">
+                         <div class="text-xs font-bold text-indigo-600 mb-1">ðŸ“– Reference</div>
+                         <div class="text-xs text-gray-700 italic">${escapeHtml(article.reference)}</div>
+                       </div>`
+                    : '';
+
+                const summaryShort = (article.summary || '').slice(0, 280);
+                const summaryId = 'sum1-' + Math.random().toString(36).slice(2);
+                const summaryHtml = article.summary && article.summary.length > 280
+                    ? `<p class="text-xs text-gray-600 line-clamp-3">${escapeHtml(summaryShort)}â€¦
+                         <button onclick="document.getElementById('${summaryId}').classList.toggle('hidden');this.textContent=this.textContent.includes('â–¼')?'â–² à¸¢à¹ˆà¸­':'â–¼ à¸”à¸¹à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡'"
+                            class="text-indigo-500 ml-1">â–¼ à¸”à¸¹à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡</button>
+                         <span id="${summaryId}" class="hidden block mt-1 whitespace-pre-wrap">${escapeHtml(article.summary)}</span>
+                       </p>`
+                    : `<p class="text-xs text-gray-600">${escapeHtml(article.summary || '(à¹„à¸¡à¹ˆà¸¡à¸µà¸ªà¸£à¸¸à¸›)')}</p>`;
+
+                card.innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <span class="shrink-0 bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded mt-0.5">#${i + 1}</span>
+                        <div class="flex-1 min-w-0">
+                            ${titleHtml}
+                            ${metaHtml ? `<div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500 mb-2">${metaHtml}</div>` : ''}
+                            <div class="mb-2">ðŸ”— ${urlHtml}</div>
+                            ${summaryHtml}
+                            ${refHtml}
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+
+            document.getElementById('search-results').classList.remove('hidden');
+        }
+
+        // ======================== GENERATE REPORT ========================
+        async function generateReport() {
+            const topic = document.getElementById('report-topic').value.trim();
+            if (!topic) { alert('à¸à¸£à¸¸à¸“à¸²à¹ƒà¸ªà¹ˆà¸«à¸±à¸§à¸‚à¹‰à¸­à¸§à¸´à¸ˆà¸±à¸¢'); return; }
+
+            const maxArticles = parseInt(document.getElementById('report-max-articles').value);
+            const maxQueries = parseInt(document.getElementById('report-max-queries').value);
+            const minRelevance = parseFloat(document.getElementById('report-min-relevance').value);
+
+            // Reset UI
+            document.getElementById('report-output').classList.add('hidden');
+            document.getElementById('report-progress').classList.remove('hidden');
+            document.getElementById('progress-summary').classList.add('hidden');
+            document.getElementById('btn-report').disabled = true;
+            document.getElementById('btn-report').innerHTML = 'â³ à¸à¸³à¸¥à¸±à¸‡à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™...';
+            clearCharts();
+
+            const timeline = document.getElementById('progress-timeline');
+            timeline.innerHTML = '';
+
+            // Add initial progress steps
+            const steps = [
+                { name: 'Research Topic Parser', desc: 'à¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¸«à¸±à¸§à¸‚à¹‰à¸­à¸§à¸´à¸ˆà¸±à¸¢ à¸ªà¸£à¹‰à¸²à¸‡ search queries' },
+                { name: 'ThaiJO Searcher', desc: 'à¸„à¹‰à¸™à¸«à¸²à¸šà¸—à¸„à¸§à¸²à¸¡à¸ˆà¸²à¸ TCI-THAIJO' },
+                { name: 'Article Screener', desc: 'à¸„à¸±à¸”à¸à¸£à¸­à¸‡à¸„à¸§à¸²à¸¡à¹€à¸à¸µà¹ˆà¸¢à¸§à¸‚à¹‰à¸­à¸‡' },
+                { name: 'Citation Generator', desc: 'à¸ªà¸£à¹‰à¸²à¸‡ APA citations' },
+                { name: 'Research Synthesizer', desc: 'à¸ªà¸±à¸‡à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¸‡à¸²à¸™à¸§à¸´à¸ˆà¸±à¸¢' },
+                { name: 'Report Composer', desc: 'à¹€à¸£à¸µà¸¢à¸šà¹€à¸£à¸µà¸¢à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™' },
+            ];
+            steps.forEach(step => addProgressStep(step.name, step.desc, 'pending'));
+
+            // Try SSE streaming first, fallback to regular POST
+            try {
+                const requestBody = {
+                    topic,
+                    max_articles: maxArticles,
+                    max_queries: maxQueries,
+                    min_relevance: minRelevance,
+                    session_id: null,
+                    user_id: null
+                };
+
+                // Attempt SSE streaming
+                const sseRes = await fetch(`${API_BASE}/api/thaijo/research/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (sseRes.ok && sseRes.headers.get('content-type')?.includes('text/event-stream')) {
+                    // SSE mode â€” read events
+                    const reader = sseRes.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let reportData = null;
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+
+                        for (const line of lines) {
+                            if (!line.startsWith('data: ')) continue;
+                            try {
+                                const evt = JSON.parse(line.slice(6));
+                                if (evt.type === 'agent_progress' || evt.type === 'search_progress' || evt.type === 'screening') {
+                                    const d = evt.data;
+                                    if (d && d.agent_name) {
+                                        updateProgressStep(d.agent_name, d.status === 'done' ? 'done' : d.status === 'error' ? 'error' : 'active');
+                                    }
+                                } else if (evt.type === 'content') {
+                                    reportData = evt.data;
+                                } else if (evt.type === 'error') {
+                                    throw new Error(evt.message);
+                                }
+                            } catch (parseErr) { /* skip malformed */ }
+                        }
+                    }
+
+                    if (reportData) {
+                        steps.forEach(step => updateProgressStep(step.name, 'done'));
+                        showProgressSummary(reportData);
+                        displayReport(reportData);
+                    }
+                } else {
+                    // Fallback to regular POST
+                    const res = await fetch(`${API_BASE}/api/thaijo/research`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    if (!res.ok) {
+                        const errText = await res.text();
+                        throw new Error(`HTTP ${res.status}: ${errText}`);
+                    }
+
+                    const data = await res.json();
+                    steps.forEach(step => updateProgressStep(step.name, 'done'));
+                    showProgressSummary(data);
+                    displayReport(data);
+                }
+            } catch (err) {
+                if (err.message.includes('404') || err.message.includes('405')) {
+                    await simulateReportFromSearch(topic, maxArticles);
+                } else {
+                    addProgressStep('Error', err.message, 'error');
+                    alert('Error generating report: ' + err.message);
+                }
+            } finally {
+                document.getElementById('btn-report').disabled = false;
+                document.getElementById('btn-report').innerHTML = '<span>ðŸ“</span> à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸‡à¸²à¸™à¸§à¸´à¸ˆà¸±à¸¢';
+            }
+        }
+
+        // Fallback: simulate report by searching ThaiJO and building a simple report
+        async function simulateReportFromSearch(topic, maxArticles) {
+            updateProgressStep('Research Topic Parser', 'active');
+
+            // Generate queries from topic (simple split)
+            const words = topic.split(/\s+/).filter(w => w.length > 1);
+            const queries = [];
+            if (words.length >= 2) queries.push(words.slice(0, 3).join(' '));
+            if (words.length >= 4) queries.push(words.slice(2, 5).join(' '));
+            queries.push(topic.substring(0, 50));
+            updateProgressStep('Research Topic Parser', 'done');
+
+            // Search ThaiJO
+            updateProgressStep('ThaiJO Searcher', 'active');
+            const allArticles = [];
+            for (const q of queries.slice(0, 3)) {
+                try {
+                    const res = await fetch(`${API_BASE}/api/thaijo/search`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ term: q, size: 5, page: 1, strict: true })
+                    });
+                    const data = await res.json();
+                    if (data.results) {
+                        data.results.forEach(r => {
+                            r._query = q;
+                            if (!allArticles.find(a => a.pdf_url === r.pdf_url)) {
+                                allArticles.push(r);
+                            }
+                        });
+                    }
+                } catch (e) { /* skip failed query */ }
+            }
+            updateProgressStep('ThaiJO Searcher', 'done');
+
+            // Screen articles (simple: take all)
+            updateProgressStep('Article Screener', 'active');
+            const selected = allArticles.slice(0, maxArticles);
+            updateProgressStep('Article Screener', 'done');
+
+            // Generate citations
+            updateProgressStep('Citation Generator', 'active');
+            const citations = selected.map((a, i) => ({
+                citation_code: `C-${200 + i}`,
+                source_type: 'thaijo_article',
+                source_ref: a.pdf_url,
+                citation_text: a.reference ? a.reference.substring(0, 80) + '...' : `[ThaiJO Article #${i + 1}]`,
+                open_url: a.pdf_url,
+                bibliography_text: a.reference || `[à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¸œà¸¹à¹‰à¹à¸•à¹ˆà¸‡]. (à¹„à¸¡à¹ˆà¸£à¸°à¸šà¸¸à¸›à¸µ). ThaiJO. ${a.pdf_url}`
+            }));
+            updateProgressStep('Citation Generator', 'done');
+
+            // Build report markdown
+            updateProgressStep('Research Synthesizer', 'active');
+            await sleep(500);
+            updateProgressStep('Research Synthesizer', 'done');
+
+            updateProgressStep('Report Composer', 'active');
+
+            let md = `## à¸à¸²à¸£à¸—à¸šà¸—à¸§à¸™à¸§à¸£à¸£à¸“à¸à¸£à¸£à¸¡: ${topic}\n\n`;
+            md += `### à¸šà¸—à¸„à¸±à¸”à¸¢à¹ˆà¸­\n`;
+            md += `à¸à¸²à¸£à¸—à¸šà¸—à¸§à¸™à¸§à¸£à¸£à¸“à¸à¸£à¸£à¸¡à¸„à¸£à¸±à¹‰à¸‡à¸™à¸µà¹‰à¸ªà¸·à¸šà¸„à¹‰à¸™à¸ˆà¸²à¸à¸à¸²à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥ TCI-THAIJO à¸žà¸šà¸šà¸—à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¹€à¸à¸µà¹ˆà¸¢à¸§à¸‚à¹‰à¸­à¸‡ ${allArticles.length} à¸Šà¸´à¹‰à¸™ à¸„à¸±à¸”à¹€à¸¥à¸·à¸­à¸ ${selected.length} à¸Šà¸´à¹‰à¸™à¸ªà¸³à¸«à¸£à¸±à¸šà¸à¸²à¸£à¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œ\n\n`;
+            md += `### 1. à¸§à¸´à¸˜à¸µà¸à¸²à¸£à¸ªà¸·à¸šà¸„à¹‰à¸™\n`;
+            md += `- **à¹à¸«à¸¥à¹ˆà¸‡à¸‚à¹‰à¸­à¸¡à¸¹à¸¥**: TCI-THAIJO (Thai Journals Online)\n`;
+            md += `- **à¸„à¸³à¸„à¹‰à¸™**: ${queries.map(q => `"${q}"`).join(', ')}\n`;
+            md += `- **à¸ˆà¸³à¸™à¸§à¸™à¸šà¸—à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¸žà¸š**: ${allArticles.length} à¸Šà¸´à¹‰à¸™\n`;
+            md += `- **à¸ˆà¸³à¸™à¸§à¸™à¸—à¸µà¹ˆà¸„à¸±à¸”à¹€à¸¥à¸·à¸­à¸**: ${selected.length} à¸Šà¸´à¹‰à¸™\n\n`;
+            md += `### 2. à¸ªà¸£à¸¸à¸›à¸šà¸—à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¸—à¸šà¸—à¸§à¸™\n\n`;
+
+            selected.forEach((a, i) => {
+                const code = `C-${200 + i}`;
+                const snippet = (a.summary || '').substring(0, 200);
+                md += `**[${code}]** ${snippet}...\n\n`;
+            });
+
+            md += `### 3. à¸‚à¹‰à¸­à¸„à¹‰à¸™à¸žà¸šà¸«à¸¥à¸±à¸\n`;
+            md += `à¸ˆà¸²à¸à¸à¸²à¸£à¸—à¸šà¸—à¸§à¸™à¸šà¸—à¸„à¸§à¸²à¸¡ ${selected.length} à¸Šà¸´à¹‰à¸™ à¸‚à¹‰à¸­à¸„à¹‰à¸™à¸žà¸šà¸—à¸µà¹ˆà¸ªà¸³à¸„à¸±à¸à¸¡à¸µà¸”à¸±à¸‡à¸™à¸µà¹‰:\n\n`;
+            md += `> âš ï¸ **à¸«à¸¡à¸²à¸¢à¹€à¸«à¸•à¸¸**: à¸£à¸²à¸¢à¸‡à¸²à¸™à¸™à¸µà¹‰à¸ªà¸£à¹‰à¸²à¸‡à¸ˆà¸²à¸ ThaiJO Search API à¹‚à¸”à¸¢à¸•à¸£à¸‡ (Fallback mode)\n`;
+            md += `> à¹€à¸¡à¸·à¹ˆà¸­ /api/thaijo/research endpoint à¸žà¸£à¹‰à¸­à¸¡à¹ƒà¸Šà¹‰à¸‡à¸²à¸™ à¸£à¸²à¸¢à¸‡à¸²à¸™à¸ˆà¸°à¸¡à¸µ thematic analysis, contradiction analysis, research gaps à¹à¸¥à¸°à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡\n\n`;
+
+            md += `### à¹€à¸­à¸à¸ªà¸²à¸£à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡\n\n`;
+            citations.forEach(c => {
+                md += `[${c.citation_code}] ${c.bibliography_text}\n\n`;
+            });
+
+            updateProgressStep('Report Composer', 'done');
+
+            // Build response object
+            const response = {
+                content: md,
+                topic: topic,
+                articles_found: allArticles.length,
+                articles_selected: selected.length,
+                charts: [],
+                tables: [{
+                    title: 'à¸ªà¸£à¸¸à¸›à¸šà¸—à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¸—à¸šà¸—à¸§à¸™',
+                    headers: ['#', 'Citation', 'à¸ªà¸£à¸¸à¸›à¹€à¸™à¸·à¹‰à¸­à¸«à¸²', 'APA', 'Link'],
+                    rows: selected.map((a, i) => [
+                        `${i + 1}`,
+                        `C-${200 + i}`,
+                        (a.summary || '').substring(0, 100) + '...',
+                        a.reference ? 'âœ…' : 'âš ï¸',
+                        `[PDF](${a.pdf_url})`
+                    ])
+                }],
+                citations: citations,
+                follow_ups: [
+                    `à¸‡à¸²à¸™à¸§à¸´à¸ˆà¸±à¸¢à¹ƒà¸™à¸­à¸™à¸²à¸„à¸•à¸„à¸§à¸£à¸¨à¸¶à¸à¸©à¸²à¸›à¸£à¸°à¹€à¸”à¹‡à¸™à¹ƒà¸”à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡à¹€à¸à¸µà¹ˆà¸¢à¸§à¸à¸±à¸š ${topic}?`,
+                    `à¸¡à¸µà¸‡à¸²à¸™à¸§à¸´à¸ˆà¸±à¸¢à¹€à¸Šà¸´à¸‡à¸„à¸¸à¸“à¸ à¸²à¸žà¹€à¸à¸µà¹ˆà¸¢à¸§à¸à¸±à¸š ${topic} à¸¡à¸²à¸à¸™à¹‰à¸­à¸¢à¹€à¸žà¸µà¸¢à¸‡à¹ƒà¸”?`,
+                    `à¸œà¸¥à¸à¸²à¸£à¸¨à¸¶à¸à¸©à¸²à¹ƒà¸™à¸šà¸£à¸´à¸šà¸—à¹„à¸—à¸¢à¹à¸•à¸à¸•à¹ˆà¸²à¸‡à¸ˆà¸²à¸à¸•à¹ˆà¸²à¸‡à¸›à¸£à¸°à¹€à¸—à¸¨à¸­à¸¢à¹ˆà¸²à¸‡à¹„à¸£?`
+                ],
+                metadata: {
+                    elapsed_seconds: 0,
+                    pipeline: 'thaijo_research_fallback',
+                    search_queries: queries.length,
+                    articles_found: allArticles.length,
+                    articles_selected: selected.length,
+                    mode: 'fallback (direct search)'
+                }
+            };
+
+            showProgressSummary(response);
+            displayReport(response);
+        }
+
+        // ======================== DISPLAY REPORT ========================
+        function displayReport(data) {
+            // Content
+            if (data.content) {
+                document.getElementById('report-content').innerHTML = marked.parse(data.content);
+            }
+
+            // Charts
+            if (data.charts && data.charts.length > 0) {
+                document.getElementById('report-charts').classList.remove('hidden');
+                const container = document.getElementById('chart-container');
+                container.innerHTML = '';
+                data.charts.forEach((spec, i) => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white rounded-xl border p-4 shadow-sm';
+                    card.innerHTML = `
+                        <h4 class="text-sm font-bold text-gray-700 mb-2">${escapeHtml(spec.title)}</h4>
+                        <canvas id="chart-${i}" height="250"></canvas>
+                        ${spec.source_note ? `<p class="text-xs text-gray-400 mt-2">${escapeHtml(spec.source_note)}</p>` : ''}
+                    `;
+                    container.appendChild(card);
+                    try {
+                        const ctx = document.getElementById(`chart-${i}`).getContext('2d');
+                        const instance = new Chart(ctx, { type: spec.type, data: spec.data, options: spec.options || {} });
+                        chartInstances.push(instance);
+                    } catch (e) { console.error('Chart error:', e); }
+                });
+            }
+
+            // Tables
+            if (data.tables && data.tables.length > 0) {
+                document.getElementById('report-tables').classList.remove('hidden');
+                const container = document.getElementById('table-container');
+                container.innerHTML = '';
+                data.tables.forEach(tbl => {
+                    let html = `<table class="w-full text-sm border-collapse mb-4">`;
+                    html += `<thead><tr class="bg-gray-50">`;
+                    tbl.headers.forEach(h => { html += `<th class="px-3 py-2 text-left border font-medium text-gray-600">${escapeHtml(h)}</th>`; });
+                    html += `</tr></thead><tbody>`;
+                    tbl.rows.forEach(row => {
+                        html += `<tr class="hover:bg-gray-50">`;
+                        row.forEach(cell => { html += `<td class="px-3 py-2 border text-gray-700">${escapeHtml(cell)}</td>`; });
+                        html += `</tr>`;
+                    });
+                    html += `</tbody></table>`;
+                    container.innerHTML += html;
+                });
+            }
+
+            // Citations
+            if (data.citations && data.citations.length > 0) {
+                document.getElementById('report-citations').classList.remove('hidden');
+                const list = document.getElementById('citations-list');
+                list.innerHTML = '';
+                data.citations.forEach(c => {
+                    const div = document.createElement('div');
+                    div.className = 'border-l-4 border-indigo-400 pl-4 py-2 fade-in';
+                    div.innerHTML = `
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="citation-tag" onclick="window.open('${c.open_url}','_blank')">${c.citation_code}</span>
+                            <span class="text-xs text-gray-400">${c.source_type}</span>
+                        </div>
+                        <p class="text-sm text-gray-700 italic">${escapeHtml(c.bibliography_text)}</p>
+                        <a href="${c.open_url}" target="_blank" class="text-xs text-indigo-600 hover:underline mt-1 inline-block">ðŸ“„ à¹€à¸›à¸´à¸”à¸šà¸—à¸„à¸§à¸²à¸¡ â†’</a>
+                    `;
+                    list.appendChild(div);
+                });
+            }
+
+            // Follow-ups
+            if (data.follow_ups && data.follow_ups.length > 0) {
+                document.getElementById('report-followups').classList.remove('hidden');
+                const list = document.getElementById('followups-list');
+                list.innerHTML = '';
+                data.follow_ups.forEach((q, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'bg-indigo-50 rounded-lg p-3 cursor-pointer hover:bg-indigo-100 transition';
+                    div.innerHTML = `<span class="text-indigo-600 font-bold mr-2">${i + 1}.</span><span class="text-sm text-gray-700">${escapeHtml(q)}</span>`;
+                    div.onclick = () => {
+                        document.getElementById('report-topic').value = q;
+                        switchTab('report');
+                    };
+                    list.appendChild(div);
+                });
+            }
+
+            // Raw JSON
+            document.getElementById('report-raw-json').textContent = JSON.stringify(data, null, 2);
+
+            document.getElementById('report-output').classList.remove('hidden');
+        }
+
+        // ======================== PROGRESS HELPERS ========================
+        function addProgressStep(name, desc, status) {
+            const timeline = document.getElementById('progress-timeline');
+            const div = document.createElement('div');
+            div.id = `progress-${name.replace(/\s+/g, '-')}`;
+            div.className = `progress-step ${status} border-l-4 pl-4 py-2 transition-all`;
+
+            const statusIcon = status === 'done' ? 'âœ…' : status === 'active' ? 'â³' : status === 'error' ? 'âŒ' : 'â¸ï¸';
+            div.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <span class="text-sm">${statusIcon}</span>
+                    <span class="text-sm font-medium text-gray-800">${name}</span>
+                    ${status === 'active' ? '<span class="pulse-dot inline-block w-2 h-2 bg-indigo-500 rounded-full ml-1"></span>' : ''}
+                </div>
+                <p class="text-xs text-gray-500 ml-6">${desc}</p>
+            `;
+            timeline.appendChild(div);
+        }
+
+        function updateProgressStep(name, status) {
+            const id = `progress-${name.replace(/\s+/g, '-')}`;
+            const el = document.getElementById(id);
+            if (!el) return;
+
+            el.className = `progress-step ${status} border-l-4 pl-4 py-2 transition-all`;
+            const statusIcon = status === 'done' ? 'âœ…' : status === 'active' ? 'â³' : status === 'error' ? 'âŒ' : 'â¸ï¸';
+            const nameEl = el.querySelector('.font-medium');
+            if (nameEl) nameEl.previousElementSibling.textContent = statusIcon;
+
+            // Remove pulse dot if done
+            const pulse = el.querySelector('.pulse-dot');
+            if (pulse && status !== 'active') pulse.remove();
+        }
+
+        function showProgressSummary(data) {
+            document.getElementById('progress-summary').classList.remove('hidden');
+            document.getElementById('stat-queries').textContent = data.metadata?.search_queries || 'â€”';
+            document.getElementById('stat-found').textContent = data.articles_found || data.metadata?.articles_found || 'â€”';
+            document.getElementById('stat-selected').textContent = data.articles_selected || data.metadata?.articles_selected || 'â€”';
+            document.getElementById('stat-time').textContent = data.metadata?.elapsed_seconds
+                ? data.metadata.elapsed_seconds.toFixed(1) : 'â€”';
+        }
+
+        // ======================== STATUS CHECKS ========================
+        async function checkThaiJOStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/status`);
+                const data = await res.json();
+
+                document.getElementById('status-result').classList.remove('hidden');
+                const cards = document.getElementById('status-cards');
+                cards.innerHTML = `
+                    <div class="bg-white border rounded-lg p-4">
+                        <div class="text-sm font-bold text-gray-700 mb-3">ThaiJO Service</div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-gray-500">Enabled</span><span class="${data.enabled ? 'text-green-600' : 'text-red-600'} font-medium">${data.enabled ? 'âœ… Yes' : 'âŒ No'}</span></div>
+                            <div class="flex justify-between"><span class="text-gray-500">API URL</span><span class="font-mono text-xs text-gray-700">${data.api_url || 'â€”'}</span></div>
+                            <div class="flex justify-between"><span class="text-gray-500">Timeout</span><span class="text-gray-700">${data.timeout_seconds || 'â€”'}s</span></div>
+                            <div class="flex justify-between"><span class="text-gray-500">Default Size</span><span class="text-gray-700">${data.default_size || 'â€”'}</span></div>
+                            <div class="flex justify-between"><span class="text-gray-500">Max Size</span><span class="text-gray-700">${data.max_size || 'â€”'}</span></div>
+                        </div>
+                    </div>
+                    <div class="bg-white border rounded-lg p-4">
+                        <div class="text-sm font-bold text-gray-700 mb-3">Connection Test</div>
+                        <button onclick="testThaiJOConnection()" class="w-full bg-indigo-100 text-indigo-700 py-2 rounded-lg text-sm font-medium hover:bg-indigo-200 transition">
+                            ðŸ”Œ à¸—à¸”à¸ªà¸­à¸šà¸à¸²à¸£à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­
+                        </button>
+                        <div id="connection-test-result" class="mt-3 text-sm"></div>
+                    </div>
+                `;
+            } catch (err) {
+                document.getElementById('status-result').classList.remove('hidden');
+                document.getElementById('status-cards').innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm col-span-2">
+                        âŒ à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­ Agent Backend: ${err.message}
+                    </div>`;
+            }
+        }
+
+        async function testThaiJOConnection() {
+            const el = document.getElementById('connection-test-result');
+            el.innerHTML = '<span class="text-gray-500">â³ à¸à¸³à¸¥à¸±à¸‡à¸—à¸”à¸ªà¸­à¸š...</span>';
+            try {
+                const start = Date.now();
+                const res = await fetch(`${API_BASE}/api/thaijo/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ term: 'à¸ªà¸¸à¸‚à¸ à¸²à¸ž', size: 1, page: 1, strict: true })
+                });
+                const data = await res.json();
+                const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+                if (data.error) {
+                    el.innerHTML = `<span class="text-red-600">âŒ ${data.error} (${elapsed}s)</span>`;
+                } else {
+                    el.innerHTML = `<span class="text-green-600">âœ… à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¸•à¹ˆà¸­à¸ªà¸³à¹€à¸£à¹‡à¸ˆ (${elapsed}s, ${data.count} results)</span>`;
+                }
+            } catch (err) {
+                el.innerHTML = `<span class="text-red-600">âŒ ${err.message}</span>`;
+            }
+        }
+
+        async function checkAgentHealth() {
+            try {
+                const res = await fetch(`${API_BASE}/api/health`);
+                const data = await res.json();
+                const el = document.getElementById('agent-health-result');
+                el.classList.remove('hidden');
+
+                let html = '<div class="grid grid-cols-1 md:grid-cols-3 gap-3">';
+                const services = [
+                    { name: 'PostgreSQL', key: 'postgresql' },
+                    { name: 'MinIO', key: 'minio' },
+                    { name: 'pgvector', key: 'pgvector' }
+                ];
+                services.forEach(svc => {
+                    const status = data[svc.key]?.status || data[svc.key] || 'unknown';
+                    const ok = status === 'connected' || status === 'ok' || status === true;
+                    html += `
+                        <div class="bg-white border rounded-lg p-3 flex items-center gap-3">
+                            <span class="text-lg">${ok ? 'âœ…' : 'âŒ'}</span>
+                            <div>
+                                <div class="text-sm font-medium text-gray-800">${svc.name}</div>
+                                <div class="text-xs text-gray-500">${status}</div>
+                            </div>
+                        </div>`;
+                });
+                html += '</div>';
+                el.innerHTML = html;
+            } catch (err) {
+                const el = document.getElementById('agent-health-result');
+                el.classList.remove('hidden');
+                el.innerHTML = `<div class="bg-red-50 text-red-700 rounded-lg p-3 text-sm">âŒ ${err.message}</div>`;
+            }
+        }
+
+        // ======================== CACHE INSPECTOR ========================
+        let cacheData = [];
+        let cachePage = 1;
+        const CACHE_PAGE_SIZE = 20;
+        let cacheSelectedKey = null;
+
+        async function syncEvidenceRegistry() {
+            const btn = document.getElementById('btn-cache-sync');
+            const banner = document.getElementById('sync-evidence-result');
+            btn.disabled = true;
+            btn.textContent = 'â³ à¸à¸³à¸¥à¸±à¸‡ Sync...';
+            banner.classList.add('hidden');
+
+            try {
+                const resp = await fetch(`${API_BASE}/api/thaijo/sync-evidence`, { method: 'POST' });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                }
+                const data = await resp.json();
+                const hasErrors = data.errors > 0;
+                banner.className = `mb-4 p-3 rounded-lg border text-sm ${hasErrors ? 'bg-yellow-50 border-yellow-300 text-yellow-800' : 'bg-green-50 border-green-300 text-green-800'}`;
+                banner.innerHTML = `
+                    <strong>ðŸ”— Sync Evidence Registry à¹€à¸ªà¸£à¹‡à¸ˆà¸ªà¸´à¹‰à¸™</strong><br>
+                    âœ… à¸­à¸±à¸›à¹€à¸”à¸• URL: <strong>${data.synced}</strong> &nbsp;
+                    ðŸ—‘ï¸ à¸¥à¹‰à¸²à¸‡ URL: <strong>${data.cleared}</strong> &nbsp;
+                    â¸ï¸ à¹„à¸¡à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™: <strong>${data.unchanged}</strong>
+                    ${data.errors > 0 ? ` &nbsp; âš ï¸ errors: <strong>${data.errors}</strong>` : ''}
+                `;
+                banner.classList.remove('hidden');
+            } catch (err) {
+                banner.className = 'mb-4 p-3 rounded-lg border text-sm bg-red-50 border-red-300 text-red-800';
+                banner.innerHTML = `âŒ Sync à¸¥à¹‰à¸¡à¹€à¸«à¸¥à¸§: ${escapeHtml(err.message)}`;
+                banner.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'ðŸ”— Sync Evidence';
+            }
+        }
+
+        async function loadCache() {
+            document.getElementById('cache-loading').classList.remove('hidden');
+            document.getElementById('cache-table-wrapper').classList.add('hidden');
+            document.getElementById('cache-empty').classList.add('hidden');
+            document.getElementById('cache-pagination').classList.add('hidden');
+            document.getElementById('cache-detail-panel').classList.add('hidden');
+
+            try {
+                const statsRes = await fetch(`${API_BASE}/api/thaijo/cache/stats`);
+                const stats = await statsRes.json();
+                document.getElementById('cache-total-keys').textContent = stats.total_keys;
+                document.getElementById('cache-total-size').textContent = formatBytes(stats.total_size_bytes);
+                document.getElementById('cache-redis-status').textContent = stats.redis_connected ? 'âœ… Connected' : 'âŒ Offline';
+
+                const entriesRes = await fetch(`${API_BASE}/api/thaijo/cache`);
+                if (!entriesRes.ok) throw new Error(`HTTP ${entriesRes.status}`);
+                cacheData = await entriesRes.json();
+                cachePage = 1;
+                renderCacheTable();
+            } catch (err) {
+                document.getElementById('cache-empty').classList.remove('hidden');
+                document.getElementById('cache-empty').innerHTML = `âŒ à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¹‚à¸«à¸¥à¸” Cache: ${escapeHtml(err.message)}`;
+            } finally {
+                document.getElementById('cache-loading').classList.add('hidden');
+            }
+        }
+
+        function renderCacheTable() {
+            const filter = document.getElementById('cache-filter').value.toLowerCase();
+            const filtered = filter
+                ? cacheData.filter(e => e.preview.toLowerCase().includes(filter))
+                : cacheData;
+
+            document.getElementById('cache-filter-count').textContent =
+                filter ? `${filtered.length}/${cacheData.length} à¸£à¸²à¸¢à¸à¸²à¸£` : '';
+
+            if (filtered.length === 0) {
+                document.getElementById('cache-empty').classList.remove('hidden');
+                document.getElementById('cache-empty').innerHTML = filter
+                    ? `ðŸ“­ à¹„à¸¡à¹ˆà¸žà¸šà¸£à¸²à¸¢à¸à¸²à¸£à¸—à¸µà¹ˆà¸•à¸£à¸‡à¸à¸±à¸š "${escapeHtml(filter)}"`
+                    : 'ðŸ“­ à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹ƒà¸™ Cache';
+                document.getElementById('cache-table-wrapper').classList.add('hidden');
+                document.getElementById('cache-pagination').classList.add('hidden');
+                return;
+            }
+
+            const totalPages = Math.ceil(filtered.length / CACHE_PAGE_SIZE);
+            cachePage = Math.min(cachePage, totalPages);
+            const start = (cachePage - 1) * CACHE_PAGE_SIZE;
+            const pageItems = filtered.slice(start, start + CACHE_PAGE_SIZE);
+
+            const tbody = document.getElementById('cache-tbody');
+            tbody.innerHTML = '';
+
+            pageItems.forEach((entry, i) => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50 cursor-pointer';
+                const shortKey = entry.key.replace('pdf_cache:', '').substring(0, 12) + '...';
+                tr.innerHTML = `
+                    <td class="px-4 py-2 text-gray-500">${start + i + 1}</td>
+                    <td class="px-4 py-2 font-mono text-xs text-gray-600" title="${escapeHtml(entry.key)}">${shortKey}</td>
+                    <td class="px-4 py-2 text-gray-700 max-w-md truncate">${escapeHtml(entry.preview)}</td>
+                    <td class="px-4 py-2 text-gray-500 whitespace-nowrap">${formatBytes(entry.size)}</td>
+                    <td class="px-4 py-2 whitespace-nowrap">
+                        <button onclick="event.stopPropagation(); viewCacheEntry('${escapeHtml(entry.key)}')" class="text-indigo-600 hover:text-indigo-800 text-xs mr-2">ðŸ‘ï¸ à¸”à¸¹</button>
+                        <button onclick="event.stopPropagation(); deleteSingleCache('${escapeHtml(entry.key)}')" class="text-red-600 hover:text-red-800 text-xs mr-2">ðŸ—‘ï¸ à¸¥à¸š</button>
+                        ${(()=>{ const u=extractUrlFromText(entry.preview); return u ? `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-green-600 hover:text-green-800 text-xs" title="${escapeHtml(u)}">ðŸ”—</a>` : ''; })()}
+                    </td>
+                `;
+                tr.onclick = () => viewCacheEntry(entry.key);
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('cache-empty').classList.add('hidden');
+            document.getElementById('cache-table-wrapper').classList.remove('hidden');
+
+            if (totalPages > 1) {
+                document.getElementById('cache-pagination').classList.remove('hidden');
+                document.getElementById('cache-page-info').textContent = `à¸«à¸™à¹‰à¸² ${cachePage}/${totalPages}`;
+                document.getElementById('btn-cache-prev').disabled = cachePage <= 1;
+                document.getElementById('btn-cache-next').disabled = cachePage >= totalPages;
+            } else {
+                document.getElementById('cache-pagination').classList.add('hidden');
+            }
+        }
+
+        function filterCache() { cachePage = 1; renderCacheTable(); }
+        function cachePrevPage() { if (cachePage > 1) { cachePage--; renderCacheTable(); } }
+        function cacheNextPage() { cachePage++; renderCacheTable(); }
+
+        async function viewCacheEntry(key) {
+            cacheSelectedKey = key;
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/cache/${encodeURIComponent(key)}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                document.getElementById('cache-detail-key').textContent = data.key;
+                // T5: linkify ThaiJO URLs in full summary
+                document.getElementById('cache-detail-summary').innerHTML = linkifySummary(data.summary || '');
+                document.getElementById('cache-detail-panel').classList.remove('hidden');
+                document.getElementById('cache-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (err) {
+                alert('à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¹‚à¸«à¸¥à¸”à¸ªà¸£à¸¸à¸›: ' + err.message);
+            }
+        }
+
+        function closeCacheDetail() {
+            document.getElementById('cache-detail-panel').classList.add('hidden');
+            cacheSelectedKey = null;
+        }
+
+        function copyCacheSummary() {
+            // use innerText to get plain text even though summary is now linkified HTML
+            const text = document.getElementById('cache-detail-summary').innerText;
+            navigator.clipboard.writeText(text).then(() => alert('à¸„à¸±à¸”à¸¥à¸­à¸à¸ªà¸£à¸¸à¸›à¹à¸¥à¹‰à¸§!'));
+        }
+
+        async function deleteSingleCache(key) {
+            if (!confirm('à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸¥à¸šà¸£à¸²à¸¢à¸à¸²à¸£à¸™à¸µà¹‰à¸ˆà¸²à¸ Cache?')) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/cache/${encodeURIComponent(key)}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (cacheSelectedKey === key) closeCacheDetail();
+                await loadCache();
+            } catch (err) {
+                alert('à¸¥à¸šà¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ: ' + err.message);
+            }
+        }
+
+        async function deleteCacheEntry() {
+            if (!cacheSelectedKey) return;
+            await deleteSingleCache(cacheSelectedKey);
+        }
+
+        async function clearAllCache() {
+            if (!confirm('âš ï¸ à¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¸¥à¹‰à¸²à¸‡ Cache à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”? à¸à¸²à¸£à¸”à¸³à¹€à¸™à¸´à¸™à¸à¸²à¸£à¸™à¸µà¹‰à¹„à¸¡à¹ˆà¸ªà¸²à¸¡à¸²à¸£à¸–à¸¢à¹‰à¸­à¸™à¸à¸¥à¸±à¸šà¹„à¸”à¹‰')) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/cache`, { method: 'DELETE' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                alert(`à¸¥à¹‰à¸²à¸‡ Cache à¹€à¸£à¸µà¸¢à¸šà¸£à¹‰à¸­à¸¢: ${data.total_cleared} à¸£à¸²à¸¢à¸à¸²à¸£`);
+                closeCacheDetail();
+                await loadCache();
+            } catch (err) {
+                alert('à¸¥à¹‰à¸²à¸‡ Cache à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ: ' + err.message);
+            }
+        }
+
+        async function syncEvidenceRegistry() {
+            const btn = document.getElementById('btn-cache-sync');
+            const banner = document.getElementById('sync-evidence-result');
+            btn.disabled = true;
+            btn.innerHTML = 'â³ à¸à¸³à¸¥à¸±à¸‡ Sync...';
+            banner.style.display = 'none';
+            banner.classList.add('hidden');
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/sync-evidence`, { method: 'POST' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const errPart = data.errors > 0
+                    ? ` <span class="text-red-600 font-bold">${data.errors} errors</span>` : '';
+                banner.innerHTML = `
+                    <span class="font-medium text-amber-800">ðŸ”— Sync Evidence Registry à¹€à¸ªà¸£à¹‡à¸ˆà¸ªà¸´à¹‰à¸™:</span>
+                    <span class="ml-2"><strong class="text-green-700">${data.synced}</strong> à¸­à¸±à¸›à¹€à¸”à¸•</span>
+                    <span class="mx-1 text-gray-400">|</span>
+                    <span><strong class="text-red-700">${data.cleared}</strong> à¸¥à¹‰à¸²à¸‡ URL</span>
+                    <span class="mx-1 text-gray-400">|</span>
+                    <span><strong class="text-gray-700">${data.unchanged}</strong> à¹„à¸¡à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™</span>${errPart}`;
+                banner.className = 'mb-4 p-3 rounded-lg border text-sm bg-amber-50 border-amber-200';
+                banner.style.display = '';
+            } catch (err) {
+                banner.innerHTML = `âŒ Sync à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ: ${escapeHtml(err.message)}`;
+                banner.className = 'mb-4 p-3 rounded-lg border text-sm bg-red-50 border-red-200 text-red-700';
+                banner.style.display = '';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'ðŸ”— Sync Evidence';
+            }
+        }
+
+        async function loadEvidenceDebug(badOnly = false) {
+            const tbody = document.getElementById('evidence-debug-tbody');
+            const tbl = document.getElementById('evidence-debug-table');
+            const stats = document.getElementById('evidence-debug-stats');
+            const empty = document.getElementById('evidence-debug-empty');
+            tbody.innerHTML = '<tr><td colspan="5" class="px-3 py-4 text-center text-gray-400 text-xs">à¸à¸³à¸¥à¸±à¸‡à¹‚à¸«à¸¥à¸”...</td></tr>';
+            tbl.classList.remove('hidden');
+            stats.classList.add('hidden');
+            empty.classList.add('hidden');
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/evidence?bad_only=${badOnly}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                document.getElementById('ev-total').textContent = data.total;
+                document.getElementById('ev-bad').textContent = data.bad_url_count;
+                stats.classList.remove('hidden');
+                if (!data.rows || data.rows.length === 0) {
+                    tbl.classList.add('hidden');
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                tbody.innerHTML = data.rows.map(r => {
+                    const statusBadge = r.url_ok
+                        ? '<span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs">âœ… OK</span>'
+                        : r.is_download_url
+                            ? '<span class="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded text-xs">â¬‡ï¸ Download</span>'
+                            : '<span class="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-xs">âŒ Invalid</span>';
+                    const ouDisplay = r.open_url
+                        ? `<a href="${escapeHtml(r.open_url)}" target="_blank" class="text-blue-600 hover:underline font-mono">${escapeHtml(r.open_url.slice(-40))}</a>`
+                        : '<span class="text-gray-300 italic">à¸§à¹ˆà¸²à¸‡</span>';
+                    const srDisplay = r.source_ref
+                        ? `<span class="font-mono text-gray-500">${escapeHtml(r.source_ref.slice(-40))}</span>`
+                        : '<span class="text-gray-300 italic">à¸§à¹ˆà¸²à¸‡</span>';
+                    return `<tr class="${r.url_ok ? '' : 'bg-red-50'}">
+                        <td class="px-3 py-2 font-mono text-gray-700">${escapeHtml(r.evidence_id)}</td>
+                        <td class="px-3 py-2 text-gray-600 max-w-xs truncate">${escapeHtml((r.title || '').slice(0, 50))}</td>
+                        <td class="px-3 py-2">${ouDisplay}</td>
+                        <td class="px-3 py-2">${srDisplay}</td>
+                        <td class="px-3 py-2 text-center">${statusBadge}</td>
+                    </tr>`;
+                }).join('');
+            } catch (err) {
+                tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-4 text-center text-red-500 text-xs">âŒ à¹‚à¸«à¸¥à¸”à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ: ${escapeHtml(err.message)}</td></tr>`;
+            }
+        }
+
+        async function fixEvidenceUrls() {
+            const btn = document.getElementById('btn-fix-evidence');
+            const banner = document.getElementById('evidence-fix-result');
+            btn.disabled = true;
+            btn.innerHTML = 'â³ à¸à¸³à¸¥à¸±à¸‡ Fix...';
+            banner.classList.add('hidden');
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/fix-evidence-urls`, { method: 'POST' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                banner.innerHTML = `âœ… Fix à¹€à¸ªà¸£à¹‡à¸ˆà¸ªà¸´à¹‰à¸™: <strong class="text-green-700">${data.fixed}</strong> à¹à¸à¹‰à¹à¸¥à¹‰à¸§ &nbsp;|&nbsp; <strong class="text-gray-600">${data.already_ok}</strong> à¸–à¸¹à¸à¸•à¹‰à¸­à¸‡à¸­à¸¢à¸¹à¹ˆà¹à¸¥à¹‰à¸§` +
+                    (data.errors > 0 ? ` &nbsp;|&nbsp; <strong class="text-red-600">${data.errors}</strong> error` : '');
+                banner.className = 'mb-3 p-3 rounded-lg border text-sm bg-green-50 border-green-200 text-green-800';
+                banner.classList.remove('hidden');
+                // Reload table after fix
+                if (data.fixed > 0) await loadEvidenceDebug(false);
+            } catch (err) {
+                banner.innerHTML = `âŒ Fix à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ: ${escapeHtml(err.message)}`;
+                banner.className = 'mb-3 p-3 rounded-lg border text-sm bg-red-50 border-red-200 text-red-700';
+                banner.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'ðŸ”§ Fix Download URLs';
+            }
+        }
+
+        async function exportCache() {
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/cache`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const entries = await res.json();
+                // Fetch full summaries for all entries
+                const fullEntries = [];
+                for (const entry of entries) {
+                    try {
+                        const detailRes = await fetch(`${API_BASE}/api/thaijo/cache/${encodeURIComponent(entry.key)}`);
+                        if (detailRes.ok) {
+                            const detail = await detailRes.json();
+                            fullEntries.push({ key: detail.key, summary: detail.summary, size: detail.size });
+                        }
+                    } catch (_) { /* skip failed */ }
+                }
+                const blob = new Blob([JSON.stringify(fullEntries, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `thaijo_cache_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert('Export à¹„à¸¡à¹ˆà¸ªà¸³à¹€à¸£à¹‡à¸ˆ: ' + err.message);
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        // ======================== UTILS ========================
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function clearCharts() {
+            chartInstances.forEach(c => c.destroy());
+            chartInstances = [];
+        }
+
+        function copyReport() {
+            const content = document.getElementById('report-content').innerText;
+            navigator.clipboard.writeText(content).then(() => {
+                alert('à¸„à¸±à¸”à¸¥à¸­à¸à¸£à¸²à¸¢à¸‡à¸²à¸™à¹à¸¥à¹‰à¸§!');
+            });
+        }
+
+        function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+        // ======================== T5: CACHE TAB URL LINKIFICATION ========================
+
+        const THAIJO_URL_RE = /(https?:\/\/[a-z0-9]+\.tci-thaijo\.org\/index\.php\/[^\s<>"]+\/article\/view\/[\d/]+)/g;
+        const THAIJO_URL_TEST = /^https?:\/\/[a-z0-9]+\.tci-thaijo\.org\/index\.php\/[^\s<>"]+\/article\/view\/[\d/]+$/;
+
+        function linkifySummary(text) {
+            // Split on raw URLs first (before escaping) so HTML-escaping doesn't break the regex.
+            // Use a separate non-g regex for .test() to avoid stateful lastIndex issues.
+            const parts = text.split(THAIJO_URL_RE);
+            return parts.map(part =>
+                THAIJO_URL_TEST.test(part)
+                    ? `<a href="${escapeHtml(part)}" target="_blank" rel="noopener"
+                        class="text-indigo-600 underline hover:text-indigo-800 break-all">${escapeHtml(part)}</a>`
+                    : escapeHtml(part)
+            ).join('');
+        }
+
+        function extractUrlFromText(text) {
+            const m = (text || '').match(THAIJO_URL_RE);
+            return m ? m[0] : null;
+        }
+
+        // ======================== T4: AGENT TEST JS ========================
+
+        // Shared: resolve best clickable article PAGE URL from an article object
+        function extractBestUrl(article) {
+            // Priority 1: article_url = /article/view/ID (clean article page link)
+            if (article.article_url) return article.article_url;
+            // Priority 2: pdf_url if it's a /view/ link (old cache format)
+            if (article.pdf_url && article.pdf_url.includes('/article/view/')) return article.pdf_url;
+            // Priority 3: derive view URL from download URL
+            if (article.pdf_url && article.pdf_url.includes('/article/download/')) {
+                const m = article.pdf_url.match(/(\/index\.php\/[^\/]+)\/article\/download\/(\d+)/);
+                if (m) return article.pdf_url.replace(/\/article\/download\/(\d+)\/\d+/, '/article/view/$1');
+            }
+            return article.pdf_url || null;
+        }
+
+        // Shared: render one article card for Agent Test tab
+        // registryStatus: null (unknown) | 'ok' | 'missing' | 'unverified'
+        function renderAgentArticleCard(article, sourceQuery, cacheHit, registryStatus) {
+            const url = extractBestUrl(article);
+            const urlHtml = url
+                ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener"
+                        class="text-indigo-600 underline text-xs break-all hover:text-indigo-800"
+                        title="${escapeHtml(url)}">${escapeHtml(url)}</a>`
+                : `<span class="text-gray-400 text-xs">à¹„à¸¡à¹ˆà¸¡à¸µ URL</span>`;
+
+            const titleHtml = article.title
+                ? `<span class="font-semibold text-gray-800">${escapeHtml(article.title)}</span>`
+                : `<span class="font-semibold text-red-500">[à¹„à¸¡à¹ˆà¸¡à¸µà¸Šà¸·à¹ˆà¸­à¸šà¸—à¸„à¸§à¸²à¸¡ â€” regression!]</span>`;
+
+            const cacheBadge = cacheHit
+                ? `<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">ðŸŸ¢ CACHE HIT</span>`
+                : `<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">ðŸ”µ API CALL</span>`;
+
+            const regBadge = registryStatus === 'ok'
+                ? `<span class="text-xs bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full" title="registered in evidence_registry, URL verified">âœ… registered</span>`
+                : registryStatus === 'missing'
+                ? `<span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full" title="registered but URL is empty">âš ï¸ URL missing</span>`
+                : registryStatus === 'unverified'
+                ? `<span class="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-full" title="registered but URL not in cache">âŒ URL not in cache</span>`
+                : registryStatus === 'not_registered'
+                ? `<span class="text-xs bg-gray-50 text-gray-500 border border-gray-200 px-2 py-0.5 rounded-full" title="not yet in evidence_registry">ðŸŸ¡ not registered</span>`
+                : '';
+
+            const sourceHtml = sourceQuery
+                ? `<span class="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">${escapeHtml(sourceQuery)}</span>`
+                : '';
+
+            const summaryShort = (article.summary || '').slice(0, 280);
+            const summaryId = 'sum-' + Math.random().toString(36).slice(2);
+
+            // PDF download button (only if pdf_url is a /download/ link â€” actual PDF)
+            const pdfUrl = article.pdf_url || '';
+            const pdfBtnHtml = pdfUrl && pdfUrl.includes('/article/download/')
+                ? `<a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener"
+                        class="shrink-0 bg-red-600 text-white text-xs px-2 py-1 rounded hover:bg-red-700 transition"
+                        title="à¸”à¸²à¸§à¸™à¹Œà¹‚à¸«à¸¥à¸” PDF: ${escapeHtml(pdfUrl)}">ðŸ“„ PDF</a>`
+                : '';
+
+            return `
+            <div class="article-card border rounded-xl p-4 bg-gray-50 fade-in">
+                <div class="flex items-start justify-between gap-2 mb-2">
+                    <div class="flex-1">${titleHtml}</div>
+                    <div class="flex items-center gap-1 flex-shrink-0">${cacheBadge}${regBadge ? ' ' + regBadge : ''}</div>
+                </div>
+                <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
+                    ${article.apa_authors ? `<span>ðŸ‘¤ ${escapeHtml(article.apa_authors)}</span>` : ''}
+                    ${article.apa_year ? `<span>ðŸ“… ${escapeHtml(article.apa_year)}</span>` : ''}
+                    ${article.apa_journal ? `<span>ðŸ“° ${escapeHtml(article.apa_journal)}</span>` : ''}
+                </div>
+                <div class="flex items-start gap-2 mb-2">
+                    <span class="text-gray-400 shrink-0">ðŸ”—</span>
+                    <div class="flex-1 min-w-0">${urlHtml}</div>
+                    ${pdfBtnHtml}
+                </div>
+                <div class="text-xs text-gray-600 mb-2">
+                    <span class="line-clamp-3" id="${summaryId}-short">${escapeHtml(summaryShort)}${article.summary && article.summary.length > 280 ? 'â€¦' : ''}</span>
+                    ${article.summary && article.summary.length > 280
+                        ? `<button onclick="document.getElementById('${summaryId}-full').classList.toggle('hidden');this.textContent=this.textContent.includes('â–¼')?'â–² à¸¢à¹ˆà¸­':'â–¼ à¸”à¸¹à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡'"
+                            class="text-indigo-500 text-xs mt-1">â–¼ à¸”à¸¹à¹€à¸žà¸´à¹ˆà¸¡à¹€à¸•à¸´à¸¡</button>
+                           <div id="${summaryId}-full" class="hidden mt-2 text-gray-600 whitespace-pre-wrap">${escapeHtml(article.summary)}</div>`
+                        : ''}
+                </div>
+                ${sourceHtml ? `<div class="mt-1">Source: ${sourceHtml}</div>` : ''}
+            </div>`;
+        }
+
+        // Build urlâ†’registryStatus map from audit response
+        function buildRegistryMap(auditData) {
+            const map = {};
+            (auditData.ok || []).forEach(e => { if (e.open_url) map[e.open_url] = 'ok'; });
+            (auditData.missing_url || []).forEach(e => { if (e.evidence_id) map[e.evidence_id + '::missing'] = 'missing'; });
+            (auditData.unverified_url || []).forEach(e => { if (e.open_url) map[e.open_url] = 'unverified'; });
+            return map;
+        }
+
+        function getRegistryStatus(article, registryMap) {
+            if (!registryMap) return null;
+            const url = extractBestUrl(article);
+            if (!url) return null;
+            if (registryMap[url]) return registryMap[url];
+            // Check partial match by article ID
+            const m = url.match(/\/article\/view\/(\d+)/);
+            if (m) {
+                const id = m[1];
+                for (const k of Object.keys(registryMap)) {
+                    if (k.includes(`/article/view/${id}`)) return registryMap[k];
+                }
+            }
+            return 'not_registered';
+        }
+
+        // T4-A: Direct API Test
+        async function testDirectApi() {
+            const term = document.getElementById('at-term').value.trim();
+            if (!term) { alert('à¸à¸£à¸¸à¸“à¸²à¹ƒà¸ªà¹ˆà¸„à¸³à¸„à¹‰à¸™à¸«à¸²'); return; }
+            const size = parseInt(document.getElementById('at-size').value);
+            const strict = document.getElementById('at-strict').checked;
+            const btn = document.getElementById('btn-at-api');
+            const out = document.getElementById('at-api-result');
+            btn.disabled = true; btn.textContent = 'â³ à¸à¸³à¸¥à¸±à¸‡à¸„à¹‰à¸™à¸«à¸²...';
+            out.innerHTML = '<div class="text-gray-400 text-sm">à¸à¸³à¸¥à¸±à¸‡à¹€à¸£à¸µà¸¢à¸ API...</div>';
+
+            const t0 = Date.now();
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ term, size, page: 1, strict })
+                });
+                const elapsed = Date.now() - t0;
+                // Fetch search result and audit data in parallel
+                const [data, auditData] = await Promise.all([
+                    res.json(),
+                    fetch(`${API_BASE}/api/thaijo/evidence-audit`).then(r => r.json()).catch(() => null),
+                ]);
+                const cacheHit = elapsed < 500;
+                const registryMap = auditData ? buildRegistryMap(auditData) : null;
+
+                let html = '';
+                // Stats bar
+                const noteBadge = data.note
+                    ? `<span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">${escapeHtml(data.note)}</span>`
+                    : '';
+                html += `<div class="flex flex-wrap items-center gap-2 text-sm mb-2">
+                    <span class="font-medium">à¸žà¸š ${data.count || 0} à¸šà¸—à¸„à¸§à¸²à¸¡</span>
+                    <span class="text-gray-400">Â·</span>
+                    <span class="text-gray-500">${elapsed}ms</span>
+                    ${cacheHit ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">ðŸŸ¢ CACHE HIT</span>'
+                               : '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">ðŸ”µ API CALL</span>'}
+                    ${noteBadge}
+                </div>`;
+
+                if (data.error) {
+                    html += `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">âŒ ${escapeHtml(data.error)}</div>`;
+                } else if (!data.results || data.results.length === 0) {
+                    html += `<div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-700 text-sm">âš ï¸ à¹„à¸¡à¹ˆà¸žà¸šà¸šà¸—à¸„à¸§à¸²à¸¡</div>`;
+                } else {
+                    data.results.forEach(a => {
+                        const regStatus = getRegistryStatus(a, registryMap);
+                        html += renderAgentArticleCard(a, term, cacheHit, regStatus);
+                    });
+                }
+
+                // Raw JSON toggle
+                const rawId = 'raw-' + Math.random().toString(36).slice(2);
+                html += `<div class="mt-2">
+                    <button onclick="document.getElementById('${rawId}').classList.toggle('hidden');this.textContent=this.textContent.includes('â–¼')?'â–² à¸‹à¹ˆà¸­à¸™ JSON':'â–¼ à¸”à¸¹ Raw JSON'"
+                        class="text-xs text-gray-500 hover:text-gray-700">â–¼ à¸”à¸¹ Raw JSON</button>
+                    <pre id="${rawId}" class="hidden mt-2 bg-gray-900 text-green-300 rounded-lg p-3 text-xs overflow-x-auto max-h-64">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+                </div>`;
+
+                out.innerHTML = html;
+            } catch (err) {
+                out.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">âŒ ${escapeHtml(err.message)}</div>`;
+            } finally {
+                btn.disabled = false; btn.textContent = 'ðŸ” à¸—à¸”à¸ªà¸­à¸š';
+            }
+        }
+
+        // T4-B: Multi-Query Searcher â€” calls POST /api/thaijo/multi-search (single server-side request)
+        async function testMultiQuery() {
+            const lines = document.getElementById('at-queries').value
+                .split('\n').map(l => l.trim()).filter(Boolean);
+            if (!lines.length) { alert('à¸à¸£à¸¸à¸“à¸²à¹ƒà¸ªà¹ˆ query à¸­à¸¢à¹ˆà¸²à¸‡à¸™à¹‰à¸­à¸¢ 1 à¸šà¸£à¸£à¸—à¸±à¸”'); return; }
+            const size = parseInt(document.getElementById('at-multi-size').value);
+            const btn = document.getElementById('btn-at-multi');
+            const out = document.getElementById('at-multi-result');
+            btn.disabled = true; btn.textContent = 'â³ à¸à¸³à¸¥à¸±à¸‡à¸£à¸±à¸™...';
+            out.innerHTML = '<div class="text-gray-400 text-sm">à¸à¸³à¸¥à¸±à¸‡à¸£à¸±à¸™ multi-search...</div>';
+
+            let data;
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/multi-search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ queries: lines, size, strict: true })
+                });
+                data = await res.json();
+            } catch (err) {
+                out.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">âŒ ${escapeHtml(err.message)}</div>`;
+                btn.disabled = false; btn.textContent = 'â–¶ à¸£à¸±à¸™ Multi-Query';
+                return;
+            }
+
+            // Normalize field names from server response to match renderAgentArticleCard expectations
+            const queryResults = (data.query_results || []).map(qr => ({
+                query: qr.query,
+                count: qr.count,
+                elapsed: qr.elapsed_ms,
+                cacheHit: qr.cache_hit,
+                note: qr.note || '',
+                error: qr.error || '',
+            }));
+            const allArticles = (data.articles || []).map(a => ({ article: a, sourceQuery: a.search_term || '', cacheHit: false }));
+
+            // Build results HTML
+            let html = '';
+            // Per-query table
+            html += `<div class="overflow-x-auto">
+                <table class="w-full text-sm border rounded-lg overflow-hidden">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-600">Query</th>
+                            <th class="px-3 py-2 text-center text-xs font-medium text-gray-600">Count</th>
+                            <th class="px-3 py-2 text-center text-xs font-medium text-gray-600">Time</th>
+                            <th class="px-3 py-2 text-center text-xs font-medium text-gray-600">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y bg-white">
+                        ${queryResults.map(qr => `
+                        <tr>
+                            <td class="px-3 py-2 text-gray-700 max-w-xs truncate" title="${escapeHtml(qr.query)}">${escapeHtml(qr.query)}</td>
+                            <td class="px-3 py-2 text-center font-mono ${qr.count > 0 ? 'text-green-700 font-bold' : 'text-red-500'}">${qr.count}</td>
+                            <td class="px-3 py-2 text-center text-gray-500 font-mono">${qr.elapsed}ms</td>
+                            <td class="px-3 py-2 text-center">
+                                ${qr.error
+                                    ? `<span class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">âŒ ${escapeHtml(qr.error.slice(0,30))}</span>`
+                                    : qr.cacheHit
+                                        ? `<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">ðŸŸ¢ CACHE HIT</span>`
+                                        : `<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">ðŸ”µ API CALL</span>`}
+                                ${qr.note ? `<span class="text-xs text-amber-600 block mt-0.5">${escapeHtml(qr.note.slice(0,50))}</span>` : ''}
+                            </td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+
+            // Summary stats
+            const totalRaw = queryResults.reduce((s, q) => s + q.count, 0);
+            html += `<div class="flex gap-4 text-sm">
+                <span class="bg-gray-100 px-3 py-1 rounded-full">à¸£à¸§à¸¡ (raw): <strong>${totalRaw}</strong></span>
+                <span class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full">Unique (dedup): <strong>${allArticles.length}</strong></span>
+            </div>`;
+
+            // Merged article cards
+            if (allArticles.length) {
+                html += `<div class="space-y-3">`;
+                allArticles.forEach(({ article, sourceQuery, cacheHit }) => {
+                    html += renderAgentArticleCard(article, sourceQuery, cacheHit);
+                });
+                html += `</div>`;
+            } else {
+                html += `<div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-700 text-sm">âš ï¸ à¹„à¸¡à¹ˆà¸žà¸šà¸šà¸—à¸„à¸§à¸²à¸¡à¸ˆà¸²à¸à¸—à¸¸à¸ query</div>`;
+            }
+
+            out.innerHTML = html;
+            btn.disabled = false; btn.textContent = 'â–¶ à¸£à¸±à¸™ Multi-Query';
+        }
+
+        // T4-C: Sync Evidence
+        async function testSyncEvidence() {
+            const btn = document.getElementById('btn-at-sync');
+            const out = document.getElementById('at-sync-result');
+            btn.disabled = true; btn.textContent = 'â³ à¸à¸³à¸¥à¸±à¸‡ sync...';
+            out.innerHTML = '<div class="text-gray-400 text-sm">à¸à¸³à¸¥à¸±à¸‡à¹€à¸£à¸µà¸¢à¸ sync-evidence...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/sync-evidence`, { method: 'POST' });
+                const data = await res.json();
+
+                const chips = [
+                    { label: 'synced', val: data.synced ?? 0, color: 'green' },
+                    { label: 'cleared', val: data.cleared ?? 0, color: 'red' },
+                    { label: 'unchanged', val: data.unchanged ?? 0, color: 'gray' },
+                    { label: 'errors', val: data.errors ?? 0, color: 'orange' },
+                ];
+                let html = `<div class="flex flex-wrap gap-2 mb-3">
+                    ${chips.map(c => `<span class="px-3 py-1 rounded-full text-sm font-medium bg-${c.color}-100 text-${c.color}-700">${c.label}: ${c.val}</span>`).join('')}
+                    <span class="text-xs text-gray-400 self-center">${new Date().toLocaleTimeString('th-TH')}</span>
+                </div>`;
+
+                if (data.details && data.details.length) {
+                    html += `<div class="overflow-x-auto">
+                        <table class="w-full text-xs border rounded-lg overflow-hidden">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-1.5 text-left font-medium text-gray-600">ID</th>
+                                    <th class="px-3 py-1.5 text-left font-medium text-gray-600">url</th>
+                                    <th class="px-3 py-1.5 text-center font-medium text-gray-600">action</th>
+                                    <th class="px-3 py-1.5 text-left font-medium text-gray-600">reason</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y bg-white">
+                                ${data.details.map(d => `
+                                <tr>
+                                    <td class="px-3 py-1.5 font-mono text-gray-600 truncate max-w-[8rem]" title="${escapeHtml(d.id||'')}">${escapeHtml((d.id||'').slice(0,12))}</td>
+                                    <td class="px-3 py-1.5 font-mono max-w-xs truncate" title="${escapeHtml(d.url||'')}">
+                                        ${d.url ? `<a href="${escapeHtml(d.url)}" target="_blank" rel="noopener" class="text-indigo-600 underline hover:text-indigo-800">${escapeHtml(d.url.slice(0,50))}â€¦</a>` : 'â€”'}
+                                    </td>
+                                    <td class="px-3 py-1.5 text-center">
+                                        <span class="px-2 py-0.5 rounded-full ${d.action==='synced'?'bg-green-100 text-green-700':d.action==='cleared'?'bg-red-100 text-red-700':'bg-gray-100 text-gray-600'}">${escapeHtml(d.action||'')}</span>
+                                    </td>
+                                    <td class="px-3 py-1.5 text-gray-500">${escapeHtml(d.reason||'')}</td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+                } else if (data.message) {
+                    html += `<div class="text-sm text-gray-600">${escapeHtml(data.message)}</div>`;
+                }
+
+                out.innerHTML = html;
+            } catch (err) {
+                out.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">âŒ ${escapeHtml(err.message)}</div>`;
+            } finally {
+                btn.disabled = false; btn.textContent = 'ðŸ”— Sync Evidence Registry';
+            }
+        }
+
+        // T4-D: Evidence Registry Audit
+        async function auditEvidence() {
+            const btn = document.getElementById('btn-at-audit');
+            const out = document.getElementById('at-audit-result');
+            btn.disabled = true; btn.textContent = 'â³ à¸à¸³à¸¥à¸±à¸‡ audit...';
+            out.innerHTML = '<div class="text-gray-400 text-sm">à¸à¸³à¸¥à¸±à¸‡à¹€à¸£à¸µà¸¢à¸ evidence-audit...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/evidence-audit`);
+                const data = await res.json();
+
+                const chips = [
+                    { label: 'âœ… OK', val: (data.ok || []).length, color: 'green' },
+                    { label: 'âš ï¸ URL missing', val: (data.missing_url || []).length, color: 'amber' },
+                    { label: 'âŒ URL not in cache', val: (data.unverified_url || []).length, color: 'red' },
+                ];
+                let html = `<div class="flex flex-wrap gap-2 mb-4">
+                    ${chips.map(c => `<span class="px-3 py-1 rounded-full text-sm font-medium bg-${c.color}-100 text-${c.color}-700">${c.label}: ${c.val}</span>`).join('')}
+                    <span class="text-xs text-gray-400 self-center">${new Date().toLocaleTimeString('th-TH')} Â· total: ${data.total ?? 0}</span>
+                </div>`;
+
+                function auditTable(items, statusLabel, statusColor) {
+                    if (!items.length) return '';
+                    return `<div class="mb-4">
+                        <div class="text-xs font-semibold text-${statusColor}-700 uppercase tracking-wide mb-1.5">${statusLabel} (${items.length})</div>
+                        <div class="overflow-x-auto">
+                        <table class="w-full text-xs border rounded-lg overflow-hidden">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-1.5 text-left font-medium text-gray-600">ID</th>
+                                    <th class="px-3 py-1.5 text-left font-medium text-gray-600">title</th>
+                                    <th class="px-3 py-1.5 text-left font-medium text-gray-600">open_url</th>
+                                    <th class="px-3 py-1.5 text-left font-medium text-gray-600">cache_url</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y bg-white">
+                                ${items.map(r => `
+                                <tr>
+                                    <td class="px-3 py-1.5 font-mono text-gray-600 truncate max-w-[8rem]" title="${escapeHtml(r.evidence_id||'')}">${escapeHtml((r.evidence_id||'').slice(0,12))}</td>
+                                    <td class="px-3 py-1.5 max-w-[12rem] truncate" title="${escapeHtml(r.title||'')}">${escapeHtml((r.title||'â€”').slice(0,40))}</td>
+                                    <td class="px-3 py-1.5 font-mono max-w-xs truncate" title="${escapeHtml(r.open_url||'')}">
+                                        ${r.open_url ? `<a href="${escapeHtml(r.open_url)}" target="_blank" rel="noopener" class="text-indigo-600 underline hover:text-indigo-800">${escapeHtml(r.open_url.replace(/^https?:\/\/[^/]+/, '').slice(0,45))}</a>` : '<span class="text-gray-400">â€”</span>'}
+                                    </td>
+                                    <td class="px-3 py-1.5 font-mono max-w-xs truncate" title="${escapeHtml(r.cache_url||'')}">
+                                        ${r.cache_url && r.cache_url !== r.open_url ? `<a href="${escapeHtml(r.cache_url)}" target="_blank" rel="noopener" class="text-green-600 underline hover:text-green-800">${escapeHtml(r.cache_url.replace(/^https?:\/\/[^/]+/, '').slice(0,45))}</a>` : (r.cache_url ? '<span class="text-gray-400">same</span>' : '<span class="text-gray-400">â€”</span>')}
+                                    </td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>`;
+                }
+
+                html += auditTable(data.ok || [], 'âœ… OK â€” URL verified in cache', 'green');
+                html += auditTable(data.missing_url || [], 'âš ï¸ URL Missing', 'amber');
+                html += auditTable(data.unverified_url || [], 'âŒ URL Not in Cache', 'red');
+
+                out.innerHTML = html;
+            } catch (err) {
+                out.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">âŒ ${escapeHtml(err.message)}</div>`;
+            } finally {
+                btn.disabled = false; btn.textContent = 'ðŸ” Audit Evidence Registry';
+            }
+        }
+
+        // T3: ThaiJO Evidence Sync
+        async function runEvidenceSync() {
+            const btn = document.getElementById('btn-at-ev-sync');
+            const out = document.getElementById('at-ev-sync-result');
+            const model = document.getElementById('at-sync-model').value;
+            btn.disabled = true; btn.textContent = 'â³ à¸à¸³à¸¥à¸±à¸‡ sync...';
+            out.innerHTML = '<div class="text-gray-400 text-sm animate-pulse">à¸à¸³à¸¥à¸±à¸‡à¸£à¸±à¸™ evidence sync... (à¸­à¸²à¸ˆà¹ƒà¸Šà¹‰à¹€à¸§à¸¥à¸²à¸ªà¸±à¸à¸„à¸£à¸¹à¹ˆ)</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/thaijo/evidence-sync?model=${encodeURIComponent(model)}`, { method: 'POST' });
+                const data = await res.json();
+
+                // Phase 1 chips
+                const p1chips = [
+                    { label: 'cache rows', val: data.cache_rows_scanned ?? 0, color: 'gray' },
+                    { label: 'articles', val: data.articles_scanned ?? 0, color: 'gray' },
+                    { label: 'fields (rule)', val: data.fields_filled_rule ?? 0, color: 'blue' },
+                    { label: 'fields (LLM)', val: data.fields_filled_llm ?? 0, color: 'indigo' },
+                    { label: 'LLM calls', val: data.llm_calls ?? 0, color: 'purple' },
+                    { label: 'cache patched', val: data.cache_patched ?? 0, color: 'teal' },
+                ];
+                // Phase 1.5 chips
+                const p15chips = [
+                    { label: 'rows re-fetched', val: data.api_refetched_rows ?? 0, color: 'orange' },
+                    { label: 'new articles', val: data.api_new_articles ?? 0, color: 'amber' },
+                ];
+                // Phase 2 chips
+                const p2chips = [
+                    { label: 'inserted', val: data.evidence_inserted ?? 0, color: 'green' },
+                    { label: 'skipped', val: data.evidence_skipped ?? 0, color: 'gray' },
+                    { label: 'errors', val: data.evidence_errors ?? 0, color: 'red' },
+                ];
+
+                let html = `
+                <div class="space-y-3">
+                    <div>
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Phase 1 â€” Cache Enrichment</div>
+                        <div class="flex flex-wrap gap-2">
+                            ${p1chips.map(c => `<span class="px-3 py-1 rounded-full text-xs font-medium bg-${c.color}-100 text-${c.color}-700">${c.label}: ${c.val}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Phase 1.5 â€” API Re-fetch (< 5 refs)</div>
+                        <div class="flex flex-wrap gap-2">
+                            ${p15chips.map(c => `<span class="px-3 py-1 rounded-full text-xs font-medium bg-${c.color}-100 text-${c.color}-700">${c.label}: ${c.val}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Phase 2 â€” Evidence Registration</div>
+                        <div class="flex flex-wrap gap-2">
+                            ${p2chips.map(c => `<span class="px-3 py-1 rounded-full text-xs font-medium bg-${c.color}-100 text-${c.color}-700">${c.label}: ${c.val}</span>`).join('')}
+                            <span class="text-xs text-gray-400 self-center">${new Date().toLocaleTimeString('th-TH')}</span>
+                        </div>
+                    </div>
+                </div>`;
+
+                // Detail table (show up to 50 rows)
+                const details = (data.details || []).slice(0, 50);
+                if (details.length) {
+                    const p1rows = details.filter(d => d.phase === 1);
+                    const p15rows = details.filter(d => d.phase === '1.5');
+                    const p2rows = details.filter(d => d.phase === 2);
+
+                    if (p1rows.length) {
+                        html += `<div class="mt-3">
+                            <div class="text-xs font-semibold text-blue-700 mb-1">Phase 1 â€” Field patches (${p1rows.length})</div>
+                            <div class="overflow-x-auto">
+                            <table class="w-full text-xs border rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50"><tr>
+                                    <th class="px-2 py-1 text-left text-gray-600">cache_key</th>
+                                    <th class="px-2 py-1 text-left text-gray-600">pdf_url</th>
+                                    <th class="px-2 py-1 text-left text-gray-600">fields filled</th>
+                                    <th class="px-2 py-1 text-center text-gray-600">source</th>
+                                </tr></thead>
+                                <tbody class="divide-y bg-white">
+                                    ${p1rows.map(d => `<tr>
+                                        <td class="px-2 py-1 font-mono text-gray-500">${escapeHtml(d.cache_key || '')}</td>
+                                        <td class="px-2 py-1 font-mono truncate max-w-xs" title="${escapeHtml(d.pdf_url || '')}">
+                                            <a href="${escapeHtml(d.pdf_url || '')}" target="_blank" rel="noopener" class="text-indigo-600 underline">${escapeHtml((d.pdf_url || '').slice(0,50))}</a>
+                                        </td>
+                                        <td class="px-2 py-1 text-blue-700">${escapeHtml((d.fields || []).join(', '))}</td>
+                                        <td class="px-2 py-1 text-center">
+                                            <span class="px-1.5 py-0.5 rounded text-xs ${d.source==='rule+llm'?'bg-indigo-100 text-indigo-700':'bg-blue-100 text-blue-700'}">${escapeHtml(d.source||'')}</span>
+                                        </td>
+                                    </tr>`).join('')}
+                                </tbody>
+                            </table></div></div>`;
+                    }
+
+                    if (p15rows.length) {
+                        html += `<div class="mt-3">
+                            <div class="text-xs font-semibold text-orange-700 mb-1">Phase 1.5 â€” API Re-fetch (${p15rows.length})</div>
+                            <div class="overflow-x-auto">
+                            <table class="w-full text-xs border rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50"><tr>
+                                    <th class="px-2 py-1 text-left text-gray-600">cache_key</th>
+                                    <th class="px-2 py-1 text-left text-gray-600">search_term</th>
+                                    <th class="px-2 py-1 text-center text-gray-600">new articles</th>
+                                </tr></thead>
+                                <tbody class="divide-y bg-white">
+                                    ${p15rows.map(d => `<tr>
+                                        <td class="px-2 py-1 font-mono text-gray-500">${escapeHtml(d.cache_key || '')}</td>
+                                        <td class="px-2 py-1 text-gray-700">${escapeHtml(d.search_term || '')}</td>
+                                        <td class="px-2 py-1 text-center">
+                                            <span class="px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-700">+${d.new_articles ?? 0}</span>
+                                        </td>
+                                    </tr>`).join('')}
+                                </tbody>
+                            </table></div></div>`;
+                    }
+
+                    if (p2rows.length) {
+                        html += `<div class="mt-3">
+                            <div class="text-xs font-semibold text-green-700 mb-1">Phase 2 â€” Evidence registration (${p2rows.length})</div>
+                            <div class="overflow-x-auto">
+                            <table class="w-full text-xs border rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50"><tr>
+                                    <th class="px-2 py-1 text-left text-gray-600">evidence_id</th>
+                                    <th class="px-2 py-1 text-left text-gray-600">title</th>
+                                    <th class="px-2 py-1 text-left text-gray-600">pdf_url</th>
+                                    <th class="px-2 py-1 text-center text-gray-600">action</th>
+                                </tr></thead>
+                                <tbody class="divide-y bg-white">
+                                    ${p2rows.map(d => `<tr>
+                                        <td class="px-2 py-1 font-mono text-gray-500 text-xs">${escapeHtml((d.evidence_id||'').slice(0,16))}</td>
+                                        <td class="px-2 py-1 truncate max-w-[12rem]" title="${escapeHtml(d.title||'')}">${escapeHtml((d.title||'â€”').slice(0,40))}</td>
+                                        <td class="px-2 py-1 font-mono truncate max-w-xs">
+                                            <a href="${escapeHtml(d.pdf_url||'')}" target="_blank" rel="noopener" class="text-indigo-600 underline">${escapeHtml((d.pdf_url||'').slice(0,45))}</a>
+                                        </td>
+                                        <td class="px-2 py-1 text-center">
+                                            <span class="px-1.5 py-0.5 rounded text-xs ${d.action==='inserted'?'bg-green-100 text-green-700':d.action==='error'?'bg-red-100 text-red-700':'bg-gray-100 text-gray-600'}">${escapeHtml(d.action||'')}</span>
+                                        </td>
+                                    </tr>`).join('')}
+                                </tbody>
+                            </table></div></div>`;
+                    }
+                }
+
+                out.innerHTML = html;
+            } catch (err) {
+                out.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">âŒ ${escapeHtml(err.message)}</div>`;
+            } finally {
+                btn.disabled = false; btn.textContent = 'ðŸ”„ Sync Evidence';
+            }
+        }
+
+        // ======================== INIT ========================
+        async function init() {
+            try {
+                const res = await fetch(`${API_BASE}/api/health`);
+                if (res.ok) {
+                    document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-green-400';
+                    document.getElementById('health-text').textContent = 'Connected';
+                } else {
+                    document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-red-400';
+                    document.getElementById('health-text').textContent = 'Error';
+                }
+            } catch {
+                document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-red-400';
+                document.getElementById('health-text').textContent = 'Offline';
+            }
+        }
+        init();
+    </script>
+</body>
+</html>
+

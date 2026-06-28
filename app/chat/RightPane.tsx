@@ -7,6 +7,8 @@ import {
   startThaijoHtmlStream,
   appendThaijoHtmlChunk,
   getThaijoSearchState,
+  subscribeToWizardOpen,
+  subscribeToSearchReady,
 } from "./thaijoStore";
 import type { ThaijoTextStreamDetail, ThaiJoReportState } from "./thaijoStore";
 import type { ThaiJoReportJson } from "./journal-template/buildJournalHtml";
@@ -192,6 +194,12 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
         setWizardNotes({});
         setSaveStatus("idle");
         setSavedReportId(null);
+        setWizardDirectMode(false);
+        setSearchReady(false);
+        setWizardEnabled(ev.detail.showWizard ?? false);
+        if (ev.detail.label) setContentLabel(ev.detail.label);
+        // Clear old report when starting a new wizard flow so the wizard can appear
+        if (ev.detail.showWizard) setThaijoReport(null);
       } else if (ev.detail.done) {
         setIsTextStreaming(false);
       } else if (ev.detail.chunk) {
@@ -243,6 +251,35 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
     window.open(url, "_blank");
   }, [report]);
 
+  // Print to PDF
+  const handleDownloadPdf = useCallback(() => {
+    if (!report?.reportHtml) return;
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.open();
+    w.document.write(report.reportHtml);
+    w.document.close();
+    w.addEventListener("load", () => { w.focus(); w.print(); });
+    // fallback if load already fired
+    setTimeout(() => { try { w.focus(); w.print(); } catch { /* noop */ } }, 800);
+  }, [report]);
+
+  // Download as Word (.doc via msword blob)
+  const handleDownloadWord = useCallback(() => {
+    if (!report?.reportHtml) return;
+    const title = report.reportJson?.title ?? "journal";
+    const wordHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${title}</title></head><body>${report.reportHtml}</body></html>`;
+    const blob = new Blob(["\ufeff", wordHtml], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [report]);
+
   // ── Report generation (triggered by wizard) ─────────────────────────────────
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -257,7 +294,16 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
   const [wizardTopics, setWizardTopics] = useState<WizardTopic[]>([]);
   const [wizardNotes, setWizardNotes] = useState<Record<string, string>>({});
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
-
+  // จาก journal-report tool — เปิด wizard โดยตรงก่อนมี searchState
+  const [wizardDirectMode, setWizardDirectMode] = useState(false);
+  const [searchReady, setSearchReady] = useState(false);
+  // เปิด wizard เฉพาะเมื่อ tool "สร้างรายงาน" ถูกเลือก
+  const [wizardEnabled, setWizardEnabled] = useState(false);  // header label — อัปเดตตาม context ที่ใช้อยู่
+  const [contentLabel, setContentLabel] = useState("Journal Report");
+  const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ title: "", desc: "" });
+  const dragIdxRef = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const handleSelectDocType = useCallback(async (docType: string) => {
     const search = getThaijoSearchState();
     if (!search) return;
@@ -278,6 +324,28 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
       setIsLoadingTopics(false);
     }
   }, []);
+
+  const startTopicEdit = (topic: WizardTopic) => {
+    setEditingTopicId(topic.id);
+    setEditDraft({ title: topic.title, desc: topic.desc });
+  };
+  const saveTopicEdit = () => {
+    setWizardTopics((prev) =>
+      prev.map((t) => t.id === editingTopicId ? { ...t, title: editDraft.title, desc: editDraft.desc } : t)
+    );
+    setEditingTopicId(null);
+  };
+  const deleteTopic = (id: string) => {
+    setWizardTopics((prev) => prev.filter((t) => t.id !== id));
+    if (editingTopicId === id) setEditingTopicId(null);
+  };
+  const addTopic = () => {
+    const newId = `custom-${Date.now()}`;
+    const draft = { title: "หัวข้อใหม่", desc: "" };
+    setWizardTopics((prev) => [...prev, { id: newId, ...draft, checked: true }]);
+    setEditingTopicId(newId);
+    setEditDraft(draft);
+  };
 
   const handleGenerateReport = useCallback(async (docType: string, topicPlan: string = "") => {
     const search = getThaijoSearchState();
@@ -379,13 +447,40 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
     return () => window.removeEventListener("trigger-generate-html", handler);
   }, []);
 
+  // Listen for journal-report tool: open Wizard immediately, wait for search state
+  useEffect(() => {
+    const unsub = subscribeToWizardOpen((query) => {
+      setWizardDirectMode(true);
+      setSearchReady(!!getThaijoSearchState());
+      setWizardPhase("type");
+      setWizardTopics([]);
+      setWizardNotes({});
+      setSaveStatus("idle");
+      setSavedReportId(null);
+      // reset text view so Wizard section is visible
+      setBufferText(query ? `หัวข้อ: ${query}` : "");
+      setDisplayText(query ? `หัวข้อ: ${query}` : "");
+      setViewMode("text");
+    });
+    return unsub;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When searchState arrives (background ThaiJo done), enable Wizard proceed button
+  useEffect(() => {
+    const unsub = subscribeToSearchReady(() => {
+      if (wizardDirectMode) setSearchReady(true);
+    });
+    return unsub;
+  }, [wizardDirectMode]);
+
   // ── View logic ────────────────────────────────────────────────────────────
   const isTyping = displayText.length < bufferText.length;
   const showCursor = isTextStreaming || isTyping;
   const showTextView = bufferText.length > 0 || isTextStreaming;
-  const showActions = !showCursor && bufferText.length > 0 && !isHtmlStreaming && !isGenerating && !report;
+  const showActions = !showCursor && (bufferText.length > 0 || wizardDirectMode) && (wizardEnabled || wizardDirectMode) && !isHtmlStreaming && !isGenerating && !report;
   const showHtmlReport = !!report && !isHtmlStreaming && viewMode === "html";
-  const showTextSection = showTextView && !isHtmlStreaming && (viewMode === "text" || isGenerating);
+  const showTextSection = (showTextView || wizardDirectMode) && !isHtmlStreaming && (viewMode === "text" || isGenerating);
   const showEmpty = !showTextSection && !showHtmlReport && !isHtmlStreaming;
 
   return (
@@ -405,22 +500,20 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
           )}
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-sm font-semibold text-[#202124] truncate max-w-[220px]">
-              {report ? (report.reportJson?.title ?? "Journal Report") : "Journal Report"}
+              {report ? (report.reportJson?.title ?? contentLabel) : contentLabel}
             </span>
-            {(showTextView || report || isHtmlStreaming) && (
+            {(isHtmlStreaming || isTextStreaming) && (
               <span className="text-xs bg-[#e8f5ee] text-[#1a6b3c] border border-[#aad5b8] rounded-full px-2 py-0.5 shrink-0 whitespace-nowrap">
                 {isHtmlStreaming ? (
                   <span className="flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#1a6b3c] animate-pulse inline-block" />
                     กำลังสร้างรายงาน...
                   </span>
-                ) : isTextStreaming ? (
+                ) : (
                   <span className="flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#1a6b3c] animate-pulse inline-block" />
                     กำลังโหลด...
                   </span>
-                ) : (
-                  `📄 ${report?.articleCount ?? ""} บทความ`
                 )}
               </span>
             )}
@@ -491,13 +584,29 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                 </svg>
                 <span>เปิดหน้า HTML</span>
               </button>
-              {/* Download */}
+              {/* Download PDF */}
+              <button onClick={handleDownloadPdf}
+                className="inline-flex items-center gap-1.5 bg-[#c0392b] hover:bg-[#a93226] text-white px-3 py-1.5 rounded-md text-xs font-semibold transition shadow-sm">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>PDF</span>
+              </button>
+              {/* Download Word */}
+              <button onClick={handleDownloadWord}
+                className="inline-flex items-center gap-1.5 bg-[#2b579a] hover:bg-[#1e3f7a] text-white px-3 py-1.5 rounded-md text-xs font-semibold transition shadow-sm">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Word</span>
+              </button>
+              {/* Download HTML */}
               <button onClick={handleDownload}
                 className="inline-flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557b0] text-white px-3 py-1.5 rounded-md text-xs font-semibold transition shadow-sm">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                <span>Download</span>
+                <span>HTML</span>
               </button>
             </div>
           )}
@@ -527,27 +636,45 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                   {/* Step 1: เลือกประเภทรายงาน */}
                   {(wizardPhase === null || wizardPhase === "type") && (
                     <>
-                      <p className="text-sm font-semibold text-gray-700 mb-1">ต้องการทำอะไรต่อ?</p>
-                      <p className="text-xs text-gray-400 mb-4">เลือกประเภทรายงานที่ต้องการสร้างจากบทความที่ค้นพบ</p>
+                      <p className="text-sm font-semibold text-gray-700 mb-1">เลือกประเภทรายงาน</p>
+                      {wizardDirectMode && !searchReady ? (
+                        <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-4">
+                          <svg className="h-3.5 w-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                          </svg>
+                          <span>กำลังรวบรวมข้อมูล (สถิติ + คลังความรู้ + วิจัย)... กรุณารอสักครู่</span>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-400 mb-4">เลือกประเภทรายงานที่ต้องการสร้างจากบทความที่ค้นพบ</p>
+                      )}
                       <div className="flex flex-col gap-3">
                         {[
                           { docType: "policy",   emoji: "📋", label: "สรุปรายงานนโยบาย",  desc: "Policy Brief — สรุปประเด็น ข้อเสนอแนะ และนโยบายที่เกี่ยวข้อง" },
                           { docType: "plan",     emoji: "📜", label: "เขียนแผนยุทธศาสตร์", desc: "Strategic Plan — วิเคราะห์สถานการณ์และแผนระยะยาว" },
                           { docType: "workplan", emoji: "📅", label: "แผนปฏิบัติงาน",      desc: "Work Plan — ขั้นตอน ผู้รับผิดชอบ และตัวชี้วัด" },
-                        ].map(({ docType, emoji, label, desc }) => (
-                          <button
-                            key={docType}
-                            type="button"
-                            onClick={() => void handleSelectDocType(docType)}
-                            className="flex items-start gap-3 w-full rounded-2xl border border-[#d4edda] bg-[#f0faf3] px-4 py-3 text-left transition hover:border-[#1a6b3c] hover:bg-[#e8f5ee] hover:shadow-sm"
-                          >
-                            <span className="text-xl shrink-0 mt-0.5">{emoji}</span>
-                            <div>
-                              <p className="text-sm font-semibold text-[#1a6b3c]">{label}</p>
-                              <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
-                            </div>
-                          </button>
-                        ))}
+                        ].map(({ docType, emoji, label, desc }) => {
+                          const waiting = wizardDirectMode && !searchReady;
+                          return (
+                            <button
+                              key={docType}
+                              type="button"
+                              disabled={waiting}
+                              onClick={() => void handleSelectDocType(docType)}
+                              className={`flex items-start gap-3 w-full rounded-2xl border px-4 py-3 text-left transition ${
+                                waiting
+                                  ? "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed"
+                                  : "border-[#d4edda] bg-[#f0faf3] hover:border-[#1a6b3c] hover:bg-[#e8f5ee] hover:shadow-sm"
+                              }`}
+                            >
+                              <span className="text-xl shrink-0 mt-0.5">{emoji}</span>
+                              <div>
+                                <p className="text-sm font-semibold text-[#1a6b3c]">{label}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -580,39 +707,136 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                       ) : (
                         <>
                           <p className="text-xs text-gray-500 mb-3">เลือกหัวข้อที่ต้องการ และเพิ่มหมายเหตุ/รายละเอียดได้</p>
-                          <div className="flex flex-col gap-2.5 mb-4">
-                            {wizardTopics.map((topic) => (
-                              <div key={topic.id} className="rounded-xl border border-[#d4edda] bg-[#f8fff8] p-3">
-                                <label className="flex items-start gap-2 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={topic.checked}
-                                    onChange={(e) =>
-                                      setWizardTopics((prev) =>
-                                        prev.map((t) => t.id === topic.id ? { ...t, checked: e.target.checked } : t)
-                                      )
-                                    }
-                                    className="mt-0.5 accent-[#1a6b3c]"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-[#1a6b3c]">{topic.title}</p>
-                                    {topic.desc && <p className="text-xs text-gray-500 mt-0.5">{topic.desc}</p>}
-                                    {topic.checked && (
-                                      <textarea
-                                        value={wizardNotes[topic.id] ?? ""}
-                                        onChange={(e) =>
-                                          setWizardNotes((prev) => ({ ...prev, [topic.id]: e.target.value }))
-                                        }
-                                        placeholder="เพิ่มหมายเหตุ หรือระบุเนื้อหาเพิ่มเติม..."
-                                        rows={2}
-                                        className="mt-1.5 w-full rounded-lg border border-[#d4edda] bg-white px-2.5 py-1.5 text-xs text-gray-800 placeholder-gray-400 outline-none resize-none focus:border-[#1a6b3c] focus:ring-1 focus:ring-[#1a6b3c]/20"
-                                      />
-                                    )}
+                          <div className="flex flex-col gap-2.5 mb-3">
+                            {wizardTopics.map((topic, idx) => (
+                              <div
+                                key={topic.id}
+                                draggable={editingTopicId !== topic.id}
+                                onDragStart={() => { dragIdxRef.current = idx; }}
+                                onDragOver={(e) => { e.preventDefault(); setDragOverIdx(idx); }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const from = dragIdxRef.current;
+                                  if (from !== null && from !== idx) {
+                                    setWizardTopics((topics) => {
+                                      const next = [...topics];
+                                      const [removed] = next.splice(from, 1);
+                                      next.splice(idx, 0, removed);
+                                      return next;
+                                    });
+                                  }
+                                  dragIdxRef.current = null;
+                                  setDragOverIdx(null);
+                                }}
+                                onDragEnd={() => { dragIdxRef.current = null; setDragOverIdx(null); }}
+                                className={`rounded-xl border p-3 transition ${
+                                  dragOverIdx === idx
+                                    ? "border-[#1a6b3c] bg-[#e8f5ee] shadow-md"
+                                    : "border-[#d4edda] bg-[#f8fff8]"
+                                }`}
+                              >
+                                {editingTopicId === topic.id ? (
+                                  <div className="flex flex-col gap-1.5">
+                                    <input
+                                      autoFocus
+                                      value={editDraft.title}
+                                      onChange={(e) => setEditDraft((d) => ({ ...d, title: e.target.value }))}
+                                      placeholder="ชื่อหัวข้อ"
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveTopicEdit(); if (e.key === "Escape") setEditingTopicId(null); }}
+                                      className="w-full rounded-lg border border-[#d4edda] bg-white px-2.5 py-1.5 text-sm font-semibold text-[#1a6b3c] outline-none focus:border-[#1a6b3c] focus:ring-1 focus:ring-[#1a6b3c]/20"
+                                    />
+                                    <input
+                                      value={editDraft.desc}
+                                      onChange={(e) => setEditDraft((d) => ({ ...d, desc: e.target.value }))}
+                                      placeholder="คำอธิบาย (ไม่บังคับ)"
+                                      onKeyDown={(e) => { if (e.key === "Enter") saveTopicEdit(); if (e.key === "Escape") setEditingTopicId(null); }}
+                                      className="w-full rounded-lg border border-[#d4edda] bg-white px-2.5 py-1.5 text-xs text-gray-600 outline-none focus:border-[#1a6b3c] focus:ring-1 focus:ring-[#1a6b3c]/20"
+                                    />
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <button type="button" onClick={saveTopicEdit}
+                                        className="px-3 py-1 bg-[#1a6b3c] text-white text-xs font-semibold rounded-lg hover:bg-[#155c32] transition">
+                                        บันทึก
+                                      </button>
+                                      <button type="button" onClick={() => setEditingTopicId(null)}
+                                        className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-200 transition">
+                                        ยกเลิก
+                                      </button>
+                                    </div>
                                   </div>
-                                </label>
+                                ) : (
+                                  <div className="flex items-start gap-2">
+                                    <span
+                                      className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-400 mt-0.5 shrink-0 select-none"
+                                      title="ลากเพื่อเรียงลำดับ"
+                                    >
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
+                                        <circle cx="5" cy="3" r="1.5"/><circle cx="11" cy="3" r="1.5"/>
+                                        <circle cx="5" cy="8" r="1.5"/><circle cx="11" cy="8" r="1.5"/>
+                                        <circle cx="5" cy="13" r="1.5"/><circle cx="11" cy="13" r="1.5"/>
+                                      </svg>
+                                    </span>
+                                    <input
+                                      type="checkbox"
+                                      checked={topic.checked}
+                                      onChange={(e) =>
+                                        setWizardTopics((prev) =>
+                                          prev.map((t) => t.id === topic.id ? { ...t, checked: e.target.checked } : t)
+                                        )
+                                      }
+                                      className="mt-0.5 accent-[#1a6b3c] shrink-0"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-semibold text-[#1a6b3c]">{topic.title}</p>
+                                      {topic.desc && <p className="text-xs text-gray-500 mt-0.5">{topic.desc}</p>}
+                                      {topic.checked && (
+                                        <textarea
+                                          value={wizardNotes[topic.id] ?? ""}
+                                          onChange={(e) =>
+                                            setWizardNotes((prev) => ({ ...prev, [topic.id]: e.target.value }))
+                                          }
+                                          placeholder="เพิ่มหมายเหตุ หรือระบุเนื้อหาเพิ่มเติม..."
+                                          rows={2}
+                                          className="mt-1.5 w-full rounded-lg border border-[#d4edda] bg-white px-2.5 py-1.5 text-xs text-gray-800 placeholder-gray-400 outline-none resize-none focus:border-[#1a6b3c] focus:ring-1 focus:ring-[#1a6b3c]/20"
+                                        />
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => startTopicEdit(topic)}
+                                        className="p-1 text-gray-400 hover:text-[#1a6b3c] hover:bg-[#e8f5ee] rounded-md transition"
+                                        title="แก้ไข"
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => deleteTopic(topic.id)}
+                                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition"
+                                        title="ลบ"
+                                      >
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
+                          <button
+                            type="button"
+                            onClick={addTopic}
+                            className="flex items-center justify-center gap-1.5 w-full rounded-xl border border-dashed border-[#aad5b8] bg-white hover:bg-[#e8f5ee] text-[#1a6b3c] text-xs font-semibold py-2 mb-4 transition"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                            เพิ่มหัวข้อ
+                          </button>
                           <button
                             type="button"
                             disabled={wizardTopics.every((t) => !t.checked)}

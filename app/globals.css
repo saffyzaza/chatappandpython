@@ -4,6 +4,32 @@
   @apply bg-black text-white;
 }
 
+/* ── Animations ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Accident chat markdown prose ── */
+.prose-ac h1 { font-size:1.15rem; font-weight:700; margin:1rem 0 0.4rem; color:#1e1b4b; }
+.prose-ac h2 { font-size:1.05rem; font-weight:700; margin:0.9rem 0 0.35rem; color:#1e1b4b; border-bottom:1px solid #e0e7ff; padding-bottom:0.2rem; }
+.prose-ac h3 { font-size:0.95rem; font-weight:600; margin:0.75rem 0 0.25rem; color:#312e81; }
+.prose-ac p  { margin:0.4rem 0; line-height:1.65; }
+.prose-ac ul { list-style:disc; padding-left:1.4rem; margin:0.3rem 0; }
+.prose-ac ol { list-style:decimal; padding-left:1.4rem; margin:0.3rem 0; }
+.prose-ac li { margin-bottom:0.2rem; }
+.prose-ac strong { font-weight:600; color:#312e81; }
+.prose-ac em    { font-style:italic; color:#6366f1; }
+.prose-ac code  { background:#ede9fe; color:#5b21b6; padding:0.1em 0.35em; border-radius:3px; font-size:0.85em; font-family:monospace; }
+.prose-ac pre   { background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px; padding:0.75rem; overflow-x:auto; font-size:0.82rem; margin:0.5rem 0; white-space:pre-wrap; word-break:break-word; }
+.prose-ac table { width:100%; border-collapse:collapse; font-size:0.83rem; margin:0.5rem 0 0.75rem; }
+.prose-ac th    { background:#e0e7ff; padding:0.4rem 0.65rem; text-align:left; font-weight:600; border:1px solid #c7d2fe; }
+.prose-ac td    { border:1px solid #e5e7eb; padding:0.3rem 0.65rem; }
+.prose-ac tr:nth-child(even) td { background:#f8fafc; }
+.prose-ac blockquote { border-left:3px solid #6366f1; padding:0.3rem 0.75rem; margin:0.5rem 0; background:#f5f3ff; color:#4c1d95; border-radius:0 4px 4px 0; }
+.prose-ac a { color:#4f46e5; text-decoration:underline; }
+.prose-ac hr { border:none; border-top:1px solid #e2e8f0; margin:0.5rem 0; }
+
 /* Minimalist Scrollbar */
 ::-webkit-scrollbar {
   width: 5px;

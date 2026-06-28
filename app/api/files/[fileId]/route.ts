@@ -126,7 +126,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         'Content-Disposition': isDownload
           ? `attachment; filename="${encodeURIComponent(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
           : `inline; filename="${encodeURIComponent(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        'Cache-Control': 'private, max-age=3600',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     })
   } catch (error) {

@@ -1,7 +1,7 @@
 "use client";
 import { useSyncExternalStore, useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { IoCopyOutline, IoPencilOutline } from "react-icons/io5";
+import { IoCopyOutline, IoPencilOutline, IoRefreshOutline } from "react-icons/io5";
 
 import { createEmptyChatSessionState, getChatSessionState, saveChatSessionState, subscribeToChatSession } from "./chatSessionStore";
 import { getStreamingSteps, subscribeToStreamingState } from "./streamingStore";
@@ -44,7 +44,55 @@ export const LeftPane = () => {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const hydratedSessionsRef = useRef<Set<string>>(new Set());
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  // Delay before showing "recovery" UI (avoids flash on normal start)
+  const [recoveryDelayPassed, setRecoveryDelayPassed] = useState(false);
+
+  // ── Elapsed timer — counts up from session.startedAt ────────────────────
+  useEffect(() => {
+    if (session.status !== "running") {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      setElapsed(0);
+      return;
+    }
+    const startTime = session.startedAt ?? Date.now();
+    const tick = () => setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [session.status, session.startedAt]);
+
+  // ── Recovery delay — wait 3s before showing retry UI ────────────────────
+  useEffect(() => {
+    if (!isRunning || hasLivePipeline) { setRecoveryDelayPassed(false); return; }
+    const t = setTimeout(() => setRecoveryDelayPassed(true), 3000);
+    return () => clearTimeout(t);
+  }, [isRunning, hasLivePipeline]);
+
+  // ── Poll DB every 5s when in recovery state ──────────────────────────────
+  // Backend saves result to DB when pipeline finishes — even if SSE was cut
+  useEffect(() => {
+    if (!sessionId || !isRunning || hasLivePipeline) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`);
+        if (!res.ok) return;
+        const payload = (await res.json()) as { state?: ChatSessionState | null };
+        if (payload.state?.status && payload.state.status !== "running") {
+          saveChatSessionState(sessionId, { ...payload.state, sessionId });
+        }
+      } catch { /* ignore */ }
+    };
+    const interval = setInterval(() => { void poll(); }, 5000);
+    return () => clearInterval(interval);
+  }, [sessionId, isRunning, hasLivePipeline]);
+
+  const formatElapsed = (s: number) => {
+    if (s < 60) return `${s}s`;
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+  };
 
   const handleCopy = useCallback((id: string, text: string) => {
     void navigator.clipboard.writeText(text).then(() => {
@@ -56,6 +104,20 @@ export const LeftPane = () => {
   const handleEdit = useCallback((text: string) => {
     setDraft(text);
   }, []);
+
+  const handleRetry = useCallback(() => {
+    if (!session.lastUserPrompt) return;
+    setDraft(session.lastUserPrompt);
+    // Reset to idle so the chat input is ready to send
+    if (sessionId) {
+      saveChatSessionState(sessionId, {
+        ...getChatSessionState(sessionId),
+        status: "idle",
+        error: undefined,
+        startedAt: undefined,
+      });
+    }
+  }, [session.lastUserPrompt, sessionId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -187,6 +249,41 @@ export const LeftPane = () => {
                         )}
                       </div>
                     )}
+                    {/* Obsidian notes referenced */}
+                    {msg.notesReferenced && msg.notesReferenced.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <p className="text-[11px] text-gray-400 font-medium mb-1.5">
+                          📋 อ้างอิง {msg.notesReferenced.length} notes จากคลังความรู้
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {msg.notesReferenced.map((n) => (
+                            <span
+                              key={n.note_id}
+                              className="inline-flex items-center gap-1 text-[10px] font-medium bg-[#e8f5ee] text-[#1a6b3c] border border-[#aad5b8] px-2 py-0.5 rounded-full"
+                            >
+                              {n.title || n.note_id}
+                              {n.province && (
+                                <span className="text-[#2e9e5b] opacity-70">· {n.province}</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                        {msg.followUps && msg.followUps.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {msg.followUps.map((q, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => { setDraft(q); }}
+                                className="text-[10px] bg-[#f0faf3] text-[#1a6b3c] border border-[#c8e6d0] px-2 py-0.5 rounded-full hover:bg-[#d8f0e4] transition-colors text-left"
+                              >
+                                {q}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {/* Source file citation */}
                     {msg.sourceFile && (
                       <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-1.5 flex-wrap text-[11px] text-gray-400">
@@ -222,13 +319,16 @@ export const LeftPane = () => {
               )
             )}
 
-            {/* ── Live streaming bubble (shown while agents are running) ── */}
+            {/* ── Live streaming bubble (agents running with SSE connected) ── */}
             {hasLivePipeline && (
               <div className="flex flex-col items-start w-full">
                 <div className="bg-gray-50 border border-[#eb6f45]/20 px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm">
-                  <AgentPipelinePanel steps={liveSteps!} isLive={true} />
+                  <AgentPipelinePanel steps={liveSteps!} isLive={true} elapsedSeconds={elapsed} />
                   <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
                     <span>กำลังสรุปผลลัพธ์</span>
+                    <span className="font-mono tabular-nums text-[#eb6f45] font-semibold">
+                      {formatElapsed(elapsed)}
+                    </span>
                     <span className="flex gap-1">
                       {[0, 150, 300].map((d) => (
                         <span
@@ -239,6 +339,53 @@ export const LeftPane = () => {
                       ))}
                     </span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Recovery bubble (running but SSE disconnected — e.g. after refresh) ── */}
+            {isRunning && !hasLivePipeline && (
+              <div className="flex flex-col items-start w-full">
+                <div className={`px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm border ${
+                  recoveryDelayPassed
+                    ? "bg-amber-50 border-amber-200"
+                    : "bg-gray-50 border-gray-200"
+                }`}>
+                  <div className="flex items-center gap-2 text-xs mb-1.5">
+                    <span className="flex gap-1">
+                      {[0, 150, 300].map((d) => (
+                        <span
+                          key={d}
+                          className={`w-1 h-1 rounded-full animate-bounce ${recoveryDelayPassed ? "bg-amber-400" : "bg-gray-400"}`}
+                          style={{ animationDelay: `${d}ms` }}
+                        />
+                      ))}
+                    </span>
+                    <span className={recoveryDelayPassed ? "text-amber-700" : "text-gray-500"}>
+                      {recoveryDelayPassed ? "กำลังประมวลผล..." : "กำลังเริ่มต้น..."}
+                    </span>
+                    {elapsed > 0 && (
+                      <span className="font-mono tabular-nums text-[#eb6f45] font-semibold">
+                        {formatElapsed(elapsed)}
+                      </span>
+                    )}
+                  </div>
+                  {recoveryDelayPassed && (
+                    <p className="text-[11px] text-amber-600 leading-relaxed">
+                      ระบบ AI กำลังวิเคราะห์อยู่ — การเชื่อมต่อถูกตัดชั่วคราว (เช่น refresh)
+                      ระบบจะโหลดผลลัพธ์โดยอัตโนมัติเมื่อพร้อม
+                    </p>
+                  )}
+                  {recoveryDelayPassed && session.lastUserPrompt && (
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      className="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-amber-700 hover:text-amber-900 transition-colors"
+                    >
+                      <IoRefreshOutline size={12} />
+                      ส่งคำถามใหม่อีกครั้ง
+                    </button>
+                  )}
                 </div>
               </div>
             )}

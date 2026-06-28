@@ -3,8 +3,10 @@ import { useState, useRef, useEffect, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { IoSend } from "react-icons/io5";
 import { HiOutlineLightBulb, HiOutlineSparkles } from "react-icons/hi";
-import { FiPlus, FiList, FiPaperclip, FiImage, FiCamera, FiFileText, FiEdit, FiDatabase, FiSearch, FiX } from "react-icons/fi";
-import { TbGitCompare } from "react-icons/tb";
+import {
+    FiPlus, FiList, FiPaperclip, FiImage, FiCamera,
+    FiDatabase, FiSearch, FiX, FiActivity, FiBookOpen, FiBook, FiClipboard,
+} from "react-icons/fi";
 import {
     getAttachedFiles,
     subscribeAttachedFiles,
@@ -14,8 +16,7 @@ import {
 } from "../../chat/attachedFilesStore";
 import { subscribeDraft, getDraft, clearDraft } from "../../chat/chatDraftStore";
 
-
-import type { AgentStep, ChatSessionState, SourceFile } from "../../chat/chatTypes";
+import type { AgentStep, ChatSessionState, SourceFile, ObsidianNoteRef } from "../../chat/chatTypes";
 import {
     createChatSessionMessage,
     generateChatSessionId,
@@ -43,7 +44,69 @@ type ChatInputProps = {
     onToggleDatabaseExplorer?: () => void;
 };
 
-type ChatMode = "normal" | "tavily" | "thaijo" | "compare" | "report" | "workplan" | "database";
+// ── Tool definitions ───────────────────────────────────────────────────────────
+const TOOL_DEFS = [
+    {
+        id: "report",
+        labelTh: "สร้างรายงาน",
+        desc: "สร้างรายงานสรุปจากข้อมูลที่รวบรวม แสดงผลด้านขวา",
+        bgColor: "#fff9db", borderColor: "#ffe066", textColor: "#7c6600",
+        activeIconColor: "#f08c00",
+        Icon: FiClipboard,
+    },
+    {
+        id: "stats",
+        labelTh: "สถิติ",
+        desc: "วิเคราะห์ข้อมูลสถิติสาธารณสุข และอุบัติเหตุทางถนน (Accident SQL Agent)",
+        bgColor: "#f3f0ff", borderColor: "#c5b4f5", textColor: "#6741d9",
+        activeIconColor: "#7c4ad9",
+        Icon: FiActivity,
+    },
+    {
+        id: "tavily",
+        labelTh: "ค้นหาทั่วไป",
+        desc: "ค้นหาข้อมูลจากอินเทอร์เน็ตด้วย Tavily Search",
+        bgColor: "#fff3ee", borderColor: "#f5c7ad", textColor: "#c85f35",
+        activeIconColor: "#eb6f45",
+        Icon: FiSearch,
+    },
+    {
+        id: "thaijo",
+        labelTh: "วิจัย",
+        desc: "ค้นหาและสังเคราะห์บทความวิจัยจากฐานข้อมูล ThaiJo",
+        bgColor: "#eef5ee", borderColor: "#aad5b8", textColor: "#1a6b3c",
+        activeIconColor: "#2e9e5b",
+        Icon: FiBookOpen,
+    },
+    {
+        id: "obsidian",
+        labelTh: "คลังความรู้รายงาน",
+        desc: "คลังความรู้สุขภาพ เขตสุขภาพที่ 10 (อุบล ศรีสะเกษ ยโสธร ฯ)",
+        bgColor: "#f0fdfa", borderColor: "#99f6e4", textColor: "#0f766e",
+        activeIconColor: "#0d9488",
+        Icon: FiBook,
+    },
+] as const;
+
+type ToolId = typeof TOOL_DEFS[number]["id"];
+
+const TOOL_MODE_MAP: Record<ToolId, string> = {
+    stats:           "stats",
+    report:          "report",
+    tavily:          "tavily",
+    thaijo:          "thaijo",
+    obsidian:        "obsidian",
+};
+
+// เครื่องมือที่ "สร้างรายงาน" จะดึงข้อมูลอัตโนมัติ
+const REPORT_DATA_SOURCES: ToolId[] = ["stats", "obsidian", "thaijo", "tavily"];
+
+const DATA_LABELS: Partial<Record<ToolId, string>> = {
+    thaijo:   "บทความวิจัย",
+    obsidian: "คลังความรู้",
+    stats:    "สถิติ",
+    tavily:   "ค้นหา",
+};
 
 const _emptySnapshot: never[] = [];
 const emptyAttachedFiles = () => _emptySnapshot;
@@ -56,7 +119,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
-    const [chatMode, setChatMode] = useState<ChatMode>("normal");
+    const [selectedTools, setSelectedTools] = useState<ToolId[]>([]);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef  = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -68,17 +131,35 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         emptyAttachedFiles,
     );
 
+    const toggleTool = (id: ToolId) => {
+        setSelectedTools(prev =>
+            prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
+        );
+    };
+
+    const removeTool = (id: ToolId) => {
+        setSelectedTools(prev => prev.filter(t => t !== id));
+    };
+
+    /** Compute the API mode from selected tools */
+    const getEffectiveMode = (tools: ToolId[], hasFiles: boolean): string => {
+        // Files attached → force database mode
+        if (hasFiles) return "database";
+        if (tools.length === 0) return "normal";
+        // report → รวบรวมจาก 3 แหล่ง (thaijo + obsidian + stats) แล้วเปิด wizard
+        if (tools.includes("report")) return "report-gather";
+        const nonReport = tools.filter(t => t !== "report");
+        if (nonReport.length === 1) return TOOL_MODE_MAP[nonReport[0]] ?? "thaijo";
+        return "multi";
+    };
+
     const persistHistory = async (sessionId: string, state: ChatSessionState) => {
         try {
             const response = await fetch("/api/chat/history", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    sessionId,
-                    state,
-                }),
+                body: JSON.stringify({ sessionId, state }),
             });
-
             if (response.ok) {
                 window.dispatchEvent(new CustomEvent("chat-history-updated", { detail: { sessionId } }));
             }
@@ -114,9 +195,8 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
             setMessage("");
             setShowAddMenu(false);
             setShowToolsMenu(false);
-            setChatMode("normal");
+            setSelectedTools([]);
         };
-
         window.addEventListener("chat-new-session", handleNewChat);
         return () => window.removeEventListener("chat-new-session", handleNewChat);
     }, []);
@@ -124,6 +204,13 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const handleSend = async () => {
         const trimmedMessage = message.trim();
         if (!trimmedMessage || isSubmitting) return;
+
+        const currentSelectedTools = [...selectedTools]; // capture at send time
+
+        // เมื่อ "สร้างรายงาน" ถูกเลือก → อัตโนมัติดึงข้อมูลจาก 3 แหล่ง (สถิติ + คลังความรู้ + วิจัย)
+        const effectiveTools: ToolId[] = currentSelectedTools.includes("report")
+            ? [...new Set([...currentSelectedTools, ...REPORT_DATA_SOURCES])]
+            : currentSelectedTools;
 
         const currentSessionId = pathname.match(/^\/chat\/sessions\/([^/]+)$/)?.[1];
         const sessionId = currentSessionId ?? generateChatSessionId();
@@ -140,6 +227,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
             error: undefined,
             lastUserPrompt: trimmedMessage,
             messages: nextMessages,
+            startedAt: Date.now(),
         };
 
         saveChatSessionState(sessionId, runningState);
@@ -153,12 +241,14 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         setIsSubmitting(true);
 
         try {
-            const effectiveMode = attachedFiles.length > 0 && chatMode === "normal" ? "database" : chatMode;
+            const effectiveMode = getEffectiveMode(effectiveTools, attachedFiles.length > 0);
+
             const apiBody = {
                 sessionId,
                 prompt: trimmedMessage,
                 history: nextMessages,
                 mode: effectiveMode,
+                tools: effectiveTools,
                 attached_files: attachedFiles,
             };
             const response = await fetch("/api/chat", {
@@ -198,7 +288,15 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                     } catch { continue; }
 
                     if (event.type === "text_stream_start") {
-                        startThaijoTextStream();
+                        const dataTools = effectiveTools.filter(t => t !== "report");
+                        // โหมด "สร้างรายงาน" รวม 3 แหล่งข้อมูลเสมอ — ใช้ป้ายชื่อรวมที่อ่านง่ายแทน
+                        // การต่อชื่อเครื่องมือดิบ ๆ (เช่น "สถิติ + คลังความรู้ + บทความวิจัย")
+                        const _toolLabel = effectiveTools.includes("report")
+                            ? "ข้อมูลพื้นฐาน"
+                            : dataTools.length > 0
+                                ? dataTools.map(t => DATA_LABELS[t] ?? t).join(" + ")
+                                : "ผลลัพธ์";
+                        startThaijoTextStream(effectiveTools.includes("report"), _toolLabel);
                     } else if (event.type === "text_chunk") {
                         appendThaijoTextChunk((event.text as string) ?? "");
                     } else if (event.type === "crew_plan") {
@@ -220,17 +318,57 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         const agentName = event.agentName as string;
                         const result = (event.result as string) ?? "";
                         const code = event.code as string | undefined;
+                        const thinking = (event.reasoning as string) ?? (event.thinking as string) ?? "";
                         setStreamingSteps(sessionId, current.map((s) =>
                             s.agentName === agentName
-                                ? { ...s, step: (event.step as string) ?? s.step, result, ...(code ? { code } : {}), status: "done" as const }
+                                ? { ...s, step: (event.step as string) ?? s.step, result, thinking, ...(code ? { code } : {}), status: "done" as const }
                                 : s,
                         ));
                     } else if (event.type === "generator_chunk") {
                         const c = (event.html as string) ?? "";
                         thaijoHtmlBufferRef.current += c;
                         appendThaijoHtmlChunk(c);
+                    } else if (event.type === "result") {
+                        // ── Obsidian / Knowledge Vault pipeline result ───────────────
+                        finishThaijoTextStream();
+                        const obsContent = (event.content as string) ?? "";
+                        const obsNotes = (event.notesReferenced as ObsidianNoteRef[]) ?? [];
+                        const obsFollowUps = (event.followUps as string[]) ?? [];
+                        const obsAgentSteps = (getStreamingSteps(sessionId) ?? []).map((s) => ({
+                            ...s,
+                            status: "done" as const,
+                        }));
+                        clearStreamingState(sessionId);
+                        const obsCompletedState: ChatSessionState = {
+                            ...getChatSessionState(sessionId),
+                            sessionId,
+                            status: "completed",
+                            error: undefined,
+                            messages: [
+                                ...getChatSessionState(sessionId).messages,
+                                createChatSessionMessage("ai", obsContent, obsAgentSteps, undefined, obsNotes, obsFollowUps),
+                            ],
+                            lastUserPrompt: trimmedMessage,
+                        };
+                        saveChatSessionState(sessionId, obsCompletedState);
+                        void persistHistory(sessionId, obsCompletedState);
                     } else if (event.type === "final") {
                         finishThaijoTextStream();
+
+                        // ── Report tool: stream AI result to right pane ──────────────
+                        // report-gather mode ข้ามบล็อกนี้ — content ถูก stream ผ่าน text_chunk แล้ว
+                        // การเรียก startThaijoTextStream() อีกครั้งจะ reset wizardEnabled=false
+                        const hasHtmlReport = !!(event.reportHtml as string) || !!thaijoHtmlBufferRef.current;
+                        const isReportGather = REPORT_DATA_SOURCES.some(t => effectiveTools.includes(t));
+                        if (currentSelectedTools.includes("report") && !hasHtmlReport && !isReportGather) {
+                            const msg = (event.message as string) ?? "";
+                            if (msg) {
+                                startThaijoTextStream();
+                                appendThaijoTextChunk(msg);
+                                finishThaijoTextStream();
+                            }
+                        }
+
                         // บันทึก search state สำหรับ report generator
                         if (event.textResult) {
                             setThaijoSearchState({
@@ -239,8 +377,11 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                                 articleCount: (event.articleCount as number) ?? 0,
                             });
                         }
+                        // ดึง streaming steps ที่สะสมระหว่าง real-time ก่อน clear
+                        const streamedSteps = getStreamingSteps(sessionId) ?? [];
                         clearStreamingState(sessionId);
-                        const agentSteps = (event.agentSteps as AgentStep[]).map((s) => ({
+                        const rawSteps = (event.agentSteps as AgentStep[] | null) ?? [];
+                        const agentSteps = (rawSteps.length > 0 ? rawSteps : streamedSteps).map((s) => ({
                             ...s,
                             status: "done" as const,
                         }));
@@ -298,7 +439,6 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                     createChatSessionMessage("ai", `ระบบ AI ตอบกลับไม่สำเร็จ: ${errorMessage}`),
                 ],
             };
-
             saveChatSessionState(sessionId, failedState);
             void persistHistory(sessionId, failedState);
         } finally {
@@ -306,29 +446,26 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         }
     };
 
+    /** อ่านไฟล์เป็น base64 ในเบราว์เซอร์ — ไม่ upload ไปที่ใดเลย */
+    const readAsBase64 = (file: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve((reader.result as string).split(",")[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         setUploadingFile(true);
         try {
-            const res = await fetch(`/api/files?path=${encodeURIComponent(file.name)}&filename=${encodeURIComponent(file.name)}&mime=${encodeURIComponent(file.type)}&size=${file.size}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': file.type || 'application/octet-stream',
-                    'Content-Length': file.size.toString()
-                },
-                body: file
-            });
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Upload failed');
-            }
-            const stored = await res.json();
-            if (stored.error) throw new Error(stored.error);
-            attachFile({ id: stored.id!, name: stored.name!, extension: stored.extension! });
-            if (chatMode === "normal") setChatMode("database");
+            const content = await readAsBase64(file);
+            const id = Math.floor(Math.random() * 900000 + 100000).toString();
+            const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+            attachFile({ id, name: file.name, extension, content });
         } catch (err) {
-            console.error("File upload error:", err);
+            console.error("File read error:", err);
         } finally {
             setUploadingFile(false);
             if (fileInputRef.current) fileInputRef.current.value = "";
@@ -341,25 +478,13 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         const previewUrl = URL.createObjectURL(file);
         setUploadingImage(true);
         try {
-            const res = await fetch(`/api/files?path=${encodeURIComponent(file.name)}&filename=${encodeURIComponent(file.name)}&mime=${encodeURIComponent(file.type)}&size=${file.size}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': file.type || 'application/octet-stream',
-                    'Content-Length': file.size.toString()
-                },
-                body: file
-            });
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Upload failed');
-            }
-            const stored = await res.json();
-            if (stored.error) throw new Error(stored.error);
-            attachFile({ id: stored.id!, name: stored.name!, extension: stored.extension!, previewUrl });
-            if (chatMode === "normal") setChatMode("database");
+            const content = await readAsBase64(file);
+            const id = Math.floor(Math.random() * 900000 + 100000).toString();
+            const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+            attachFile({ id, name: file.name, extension, content, previewUrl });
         } catch (err) {
             URL.revokeObjectURL(previewUrl);
-            console.error("Image upload error:", err);
+            console.error("Image read error:", err);
         } finally {
             setUploadingImage(false);
             if (imageInputRef.current) imageInputRef.current.value = "";
@@ -420,49 +545,38 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 </div>
             )}
 
-            {/* Mode pills */}
-            {chatMode !== "normal" && (
+            {/* Active tool pills — only shown when tools are selected (ถามปกติ = no pills) */}
+            {selectedTools.length > 0 && (
                 <div className="flex items-center flex-wrap gap-1.5 mb-2 px-1">
-                    {chatMode === "tavily" && (
-                        <div className="flex items-center gap-1.5 bg-[#fff3ee] border border-[#f5c7ad] text-[#c85f35] text-xs font-medium px-2.5 py-1 rounded-full">
-                            <FiSearch size={12} /><span>ค้นหาทั่วไป</span>
-                            <button type="button" onClick={() => setChatMode("normal")} className="ml-0.5 hover:text-[#eb6f45] transition-colors text-base leading-none">×</button>
-                        </div>
-                    )}
-                    {chatMode === "thaijo" && (
-                        <div className="flex items-center gap-1.5 bg-[#eef5ee] border border-[#aad5b8] text-[#1a6b3c] text-xs font-medium px-2.5 py-1 rounded-full">
-                            <FiFileText size={12} /><span>วิจัย ThaiJo</span>
-                            <button type="button" onClick={() => setChatMode("normal")} className="ml-0.5 hover:text-[#2e9e5b] transition-colors text-base leading-none">×</button>
-                        </div>
-                    )}
-                    {chatMode === "compare" && (
-                        <div className="flex items-center gap-1.5 bg-[#eef3ff] border border-[#b3c6f5] text-[#3b5bdb] text-xs font-medium px-2.5 py-1 rounded-full">
-                            <TbGitCompare size={12} /><span>เปรียบเทียบข้อมูล</span>
-                            <button type="button" onClick={() => setChatMode("normal")} className="ml-0.5 hover:text-[#4c6ef5] transition-colors text-base leading-none">×</button>
-                        </div>
-                    )}
-                    {chatMode === "report" && (
-                        <div className="flex items-center gap-1.5 bg-[#fff9db] border border-[#ffe066] text-[#7c6600] text-xs font-medium px-2.5 py-1 rounded-full">
-                            <FiFileText size={12} /><span>สรุปรายงาน</span>
-                            <button type="button" onClick={() => setChatMode("normal")} className="ml-0.5 hover:text-[#f08c00] transition-colors text-base leading-none">×</button>
-                        </div>
-                    )}
-                    {chatMode === "workplan" && (
-                        <div className="flex items-center gap-1.5 bg-[#f3f0ff] border border-[#c5b4f5] text-[#6741d9] text-xs font-medium px-2.5 py-1 rounded-full">
-                            <FiEdit size={12} /><span>เขียนแผนงาน</span>
-                            <button type="button" onClick={() => setChatMode("normal")} className="ml-0.5 hover:text-[#7c4ad9] transition-colors text-base leading-none">×</button>
-                        </div>
-                    )}
-                    {chatMode === "database" && (
-                        <div className="flex items-center gap-1.5 bg-[#fff0f6] border border-[#f5b8d4] text-[#b5295e] text-xs font-medium px-2.5 py-1 rounded-full">
-                            <FiDatabase size={12} /><span>ฐานข้อมูล</span>
-                            <button type="button" onClick={() => setChatMode("normal")} className="ml-0.5 transition-colors text-base leading-none">×</button>
-                        </div>
+                    {selectedTools.map((id) => {
+                        const def = TOOL_DEFS.find(d => d.id === id);
+                        if (!def) return null;
+                        const { labelTh, bgColor, borderColor, textColor, Icon } = def;
+                        return (
+                            <div
+                                key={id}
+                                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
+                                style={{ backgroundColor: bgColor, border: `1px solid ${borderColor}`, color: textColor }}
+                            >
+                                <Icon size={12} />
+                                <span>{labelTh}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => removeTool(id)}
+                                    className="ml-0.5 text-base leading-none hover:opacity-70 transition-opacity"
+                                >×</button>
+                            </div>
+                        );
+                    })}
+                    {selectedTools.length > 1 && (
+                        <span className="text-[10px] text-gray-400 italic">
+                            รวมผลลัพธ์จาก {selectedTools.length} เครื่องมือ
+                        </span>
                     )}
                 </div>
             )}
 
-            {/* Popover เพิ่ม */}
+            {/* Popover เพิ่มไฟล์ */}
             {showAddMenu && (
                 <div className="absolute bottom-18 left-2 bg-white rounded-xl shadow-lg border border-gray-100 p-2 w-60 flex flex-col gap-1 z-10">
                     <button
@@ -499,61 +613,72 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 </div>
             )}
 
-            {/* Popover เครื่องมือ */}
+            {/* Popover เครื่องมือ — multi-select */}
             {showToolsMenu && (
-                <div className="absolute bottom-18 left-24 bg-white rounded-xl shadow-lg border border-gray-100 p-2 w-64 flex flex-col gap-1 z-10">
-                    <button
-                        onClick={() => { setChatMode(chatMode === "compare" ? "normal" : "compare"); setShowToolsMenu(false); }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${chatMode === "compare" ? "bg-[#eef3ff] text-[#3b5bdb]" : "text-[#334155] hover:bg-gray-50"}`}
-                    >
-                        <TbGitCompare size={18} className={chatMode === "compare" ? "text-[#4c6ef5]" : "text-[#64748b]"} />
-                        <span>เปรียบเทียบข้อมูล</span>
-                        {chatMode === "compare" && <span className="ml-auto text-[10px] font-semibold text-[#4c6ef5]">ON</span>}
-                    </button>
-                    <button
-                        onClick={() => { setChatMode(chatMode === "report" ? "normal" : "report"); setShowToolsMenu(false); }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${chatMode === "report" ? "bg-[#fff9db] text-[#7c6600]" : "text-[#334155] hover:bg-gray-50"}`}
-                    >
-                        <FiFileText size={18} className={chatMode === "report" ? "text-[#f08c00]" : "text-[#64748b]"} />
-                        <span>สรุปรายงาน</span>
-                        {chatMode === "report" && <span className="ml-auto text-[10px] font-semibold text-[#f08c00]">ON</span>}
-                    </button>
-                    <button
-                        onClick={() => { setChatMode(chatMode === "workplan" ? "normal" : "workplan"); setShowToolsMenu(false); }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${chatMode === "workplan" ? "bg-[#f3f0ff] text-[#6741d9]" : "text-[#334155] hover:bg-gray-50"}`}
-                    >
-                        <FiEdit size={18} className={chatMode === "workplan" ? "text-[#7c4ad9]" : "text-[#64748b]"} />
-                        <span>เขียนแผนงาน</span>
-                        {chatMode === "workplan" && <span className="ml-auto text-[10px] font-semibold text-[#7c4ad9]">ON</span>}
-                    </button>
-                    <button
-                        onClick={() => {
-                            onToggleDatabaseExplorer?.();
-                            setChatMode(chatMode === "database" ? "normal" : "database");
-                            setShowToolsMenu(false);
-                        }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${chatMode === "database" ? "bg-[#fff0f6] text-[#b5295e]" : "text-[#334155] hover:bg-gray-50"}`}
-                    >
-                        <FiDatabase size={18} className={chatMode === "database" ? "text-[#c2407a]" : "text-[#64748b]"} />
-                        <span>ฐานข้อมูล</span>
-                        {chatMode === "database" && <span className="ml-auto text-[10px] font-semibold text-[#c2407a]">ON</span>}
-                    </button>
-                    <button
-                        onClick={() => { setChatMode("tavily"); setShowToolsMenu(false); }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${chatMode === "tavily" ? "bg-[#fff3ee] text-[#c85f35]" : "text-[#334155] hover:bg-gray-50"}`}
-                    >
-                        <FiSearch size={18} className={chatMode === "tavily" ? "text-[#eb6f45]" : "text-[#64748b]"} />
-                        <span>ค้นหาทั่วไป</span>
-                        {chatMode === "tavily" && <span className="ml-auto text-[10px] font-semibold text-[#eb6f45]">ON</span>}
-                    </button>
-                    <button
-                        onClick={() => { setChatMode(chatMode === "thaijo" ? "normal" : "thaijo"); setShowToolsMenu(false); }}
-                        className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left ${chatMode === "thaijo" ? "bg-[#eef5ee] text-[#1a6b3c]" : "text-[#334155] hover:bg-gray-50"}`}
-                    >
-                        <FiFileText size={18} className={chatMode === "thaijo" ? "text-[#2e9e5b]" : "text-[#64748b]"} />
-                        <span>วิจัย ThaiJo</span>
-                        {chatMode === "thaijo" && <span className="ml-auto text-[10px] font-semibold text-[#2e9e5b]">ON</span>}
-                    </button>
+                <div className="absolute bottom-18 left-24 bg-white rounded-xl shadow-lg border border-gray-100 p-2 w-72 flex flex-col gap-0.5 z-10">
+                    <p className="text-[10px] text-gray-400 px-3 py-1.5 font-medium uppercase tracking-wider">
+                        เลือกเครื่องมือ
+                    </p>
+                    {TOOL_DEFS.map(({ id, labelTh, desc, bgColor, borderColor, textColor, activeIconColor, Icon }) => {
+                        const isActive = selectedTools.includes(id as ToolId);
+                        return (
+                            <button
+                                key={id}
+                                onClick={() => {
+                                    const newId = id as ToolId;
+                                    setSelectedTools(prev => prev.includes(newId) ? [] : [newId]);
+                                    setShowToolsMenu(false);
+                                }}
+                                className={`flex items-start gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left border ${
+                                    isActive ? "" : "border-transparent hover:bg-gray-50"
+                                }`}
+                                style={isActive ? {
+                                    backgroundColor: bgColor,
+                                    borderColor,
+                                    color: textColor,
+                                } : { color: "#334155" }}
+                            >
+                                {/* Checkbox indicator */}
+                                <div
+                                    className="mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all"
+                                    style={isActive
+                                        ? { backgroundColor: textColor, border: "none" }
+                                        : { border: "1.5px solid #cbd5e1", backgroundColor: "white" }
+                                    }
+                                >
+                                    {isActive && (
+                                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 12 12">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
+                                        </svg>
+                                    )}
+                                </div>
+                                <Icon
+                                    size={17}
+                                    className="shrink-0 mt-0.5"
+                                    style={{ color: isActive ? activeIconColor : "#64748b" }}
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-semibold leading-tight">{labelTh}</p>
+                                    <p className="text-[11px] mt-0.5 leading-snug"
+                                        style={{ color: isActive ? textColor : "#94a3b8" }}>
+                                        {desc}
+                                    </p>
+                                </div>
+                            </button>
+                        );
+                    })}
+                    {selectedTools.length > 0 && (
+                        <>
+                            <div className="h-px bg-gray-100 mx-2 my-1" />
+                            <button
+                                onClick={() => setSelectedTools([])}
+                                className="flex items-center justify-center gap-1.5 w-full px-3 py-2 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                            >
+                                <FiX size={12} />
+                                <span>ยกเลิกเครื่องมือทั้งหมด</span>
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -564,7 +689,11 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") void handleSend(); }}
-                    placeholder="พิมพ์ข้อความของคุณ..."
+                    placeholder={
+                        selectedTools.length === 0
+                            ? "พิมพ์ข้อความของคุณ..."
+                            : `ถามด้วย ${selectedTools.map(id => TOOL_DEFS.find(d => d.id === id)?.labelTh).join(" + ")}...`
+                    }
                     className="flex-1 outline-none bg-transparent text-gray-700 placeholder-gray-400 py-1"
                 />
                 <button
@@ -586,10 +715,21 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 </button>
                 <button
                     onClick={() => { setShowToolsMenu(!showToolsMenu); setShowAddMenu(false); }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showToolsMenu ? "bg-[#e9ebf0] text-[#334155]" : "bg-[#f4f5f8] hover:bg-[#e9ebf0] text-[#334155]"}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                        showToolsMenu
+                            ? "bg-[#e9ebf0] text-[#334155]"
+                            : selectedTools.length > 0
+                                ? "bg-[#eef3ff] text-[#3b5bdb] border border-[#b3c6f5]"
+                                : "bg-[#f4f5f8] hover:bg-[#e9ebf0] text-[#334155]"
+                    }`}
                 >
-                    <FiList className="text-[#db5b24]" size={14} />
+                    <FiList className={selectedTools.length > 0 ? "text-[#4c6ef5]" : "text-[#db5b24]"} size={14} />
                     <span>เครื่องมือ</span>
+                    {selectedTools.length > 0 && (
+                        <span className="ml-0.5 bg-[#4c6ef5] text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                            {selectedTools.length}
+                        </span>
+                    )}
                 </button>
             </div>
         </div>

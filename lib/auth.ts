@@ -1,12 +1,18 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'changeme-use-env-var';
 const JWT_EXPIRES_IN = '7d';
 const COOKIE_NAME = 'auth_token';
 
-function getSecret() {
-  return new TextEncoder().encode(JWT_SECRET);
+function getSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32 || secret.startsWith('changeme')) {
+    throw new Error(
+      'JWT_SECRET env var is missing, too short (< 32 chars), or still using the default placeholder.\n' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
+    );
+  }
+  return new TextEncoder().encode(secret);
 }
 
 export async function hashPassword(password: string): Promise<string> {

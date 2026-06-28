@@ -343,6 +343,11 @@ export default function PdfUploadPage() {
     try {
       await fetch(`/api/pdf/vault/file?path=${encodeURIComponent(node.path)}`, { method: 'DELETE' })
       loadVaultData()
+      fetch('/api/obsidian/index', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vault_id: 'health_region_10' }),
+      }).catch(() => {})
     } catch { alert('ลบไม่สำเร็จ') }
     setVaultBusy(false)
   }
@@ -422,6 +427,12 @@ export default function PdfUploadPage() {
           if (data.status === 'completed' && data.result) {
             setIngestResult(data.result)
             loadVaultData()
+            // Auto-index vault หลัง ingest สำเร็จ (fire-and-forget)
+            fetch('/api/obsidian/index', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ vault_id: 'health_region_10' }),
+            }).catch(() => {})
             // รอให้ vault load แล้วค่อย switch ไป vault tab
             setTimeout(() => setActiveTab('vault'), 800)
           }

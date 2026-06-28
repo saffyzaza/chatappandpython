@@ -328,16 +328,16 @@ export default function Viewfile({ entry, isFullscreen, onToggleFullscreen }: Vi
 							<div className="border-b border-gray-200 bg-[#f7f4f3f1] px-4 py-3 text-sm font-medium text-gray-700">
 								{preview.title}
 							</div>
-							<div className="min-h-0 flex-1 overflow-auto">
-								<table className="min-w-full border-collapse text-sm">
+							<div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
+								<table className="w-max min-w-full border-collapse text-sm">
 									<tbody>
 										{preview.rows.map((row, rowIndex) => (
 											<tr key={`${entry.id}-${rowIndex}`} className="border-b border-gray-100 align-top">
 												{row.map((cell, cellIndex) => (
 													<td
 														key={`${entry.id}-${rowIndex}-${cellIndex}`}
-														className={`whitespace-pre-wrap px-3 py-2 text-gray-700 ${
-															rowIndex === 0 ? 'bg-[#fff3ee] font-semibold text-gray-900' : ''
+														className={`whitespace-nowrap px-3 py-2 text-gray-700 ${
+															rowIndex === 0 ? 'bg-[#fff3ee] font-semibold text-gray-900 sticky top-0' : ''
 														}`}
 													>
 														{cell || ' '}
