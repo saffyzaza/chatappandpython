@@ -12,6 +12,7 @@ import {
 } from "./thaijoStore";
 import type { ThaijoTextStreamDetail, ThaiJoReportState } from "./thaijoStore";
 import type { ThaiJoReportJson } from "./journal-template/buildJournalHtml";
+import { MarkdownContent } from "../component/chat/MarkdownContent";
 
 /** แปลง HTML chunk เป็นข้อความอ่านได้ */
 function htmlToLines(html: string): string {
@@ -43,34 +44,10 @@ interface RightPaneProps {
   showLeftPaneButton?: boolean;
 }
 
-// ── Render bold **text** inside a line ────────────────────────────────────────
-function LineWithBold({ line }: { line: string }) {
-  if (!line.includes("**")) return <>{line}</>;
-  const parts = line.split(/(\*\*[^*]+\*\*)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.startsWith("**") && part.endsWith("**") ? (
-          <strong key={i} className="font-bold text-gray-900">
-            {part.slice(2, -2)}
-          </strong>
-        ) : (
-          <span key={i}>{part}</span>
-        ),
-      )}
-    </>
-  );
-}
-
 function StreamText({ text, streaming }: { text: string; streaming: boolean }) {
   return (
-    <div className="font-[Sarabun,'TH_Sarabun_New',sans-serif] text-[14px] leading-relaxed text-gray-800 whitespace-pre-wrap">
-      {text.split("\n").map((line, i) => (
-        <span key={i}>
-          <LineWithBold line={line} />
-          {"\n"}
-        </span>
-      ))}
+    <div className="font-[Sarabun,'TH_Sarabun_New',sans-serif]">
+      <MarkdownContent text={text} className="text-[14px] leading-relaxed text-gray-800" />
       {streaming && (
         <span className="inline-block w-[2px] h-[1em] bg-[#1a6b3c] align-middle animate-pulse ml-0.5" />
       )}

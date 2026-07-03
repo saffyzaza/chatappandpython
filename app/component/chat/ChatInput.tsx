@@ -1,7 +1,7 @@
 "use client"
 import { useState, useRef, useEffect, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { IoSend } from "react-icons/io5";
+import { IoSend, IoStop } from "react-icons/io5";
 import { HiOutlineLightBulb, HiOutlineSparkles } from "react-icons/hi";
 import {
     FiPlus, FiList, FiPaperclip, FiImage, FiCamera,
@@ -111,6 +111,8 @@ const DATA_LABELS: Partial<Record<ToolId, string>> = {
 const _emptySnapshot: never[] = [];
 const emptyAttachedFiles = () => _emptySnapshot;
 
+const MAX_TEXTAREA_HEIGHT = 160; // px — เกินนี้ให้ scroll แทนการขยายต่อ
+
 export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const router = useRouter();
     const thaijoHtmlBufferRef = useRef("");
@@ -123,8 +125,10 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef  = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
+    const textareaRef   = useRef<HTMLTextAreaElement>(null);
     // true เมื่อหน้ากำลัง refresh/ปิด — ใช้กันไม่ให้เขียน "failed" ทับ state "running"
     const isUnloadingRef = useRef(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
     const [uploadingFile, setUploadingFile]   = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const attachedFiles = useSyncExternalStore(
@@ -180,6 +184,14 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
+
+    // ขยายช่อง input ตามเนื้อหา — สูงสุด MAX_TEXTAREA_HEIGHT แล้ว scroll แทน
+    useEffect(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+    }, [message]);
 
     // รับ draft จาก edit button ใน message
     useEffect(() => {
@@ -253,6 +265,9 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         if (!currentSessionId) router.push(`/chat/sessions/${sessionId}`);
         setIsSubmitting(true);
 
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         try {
             const effectiveMode = getEffectiveMode(effectiveTools, attachedFiles.length > 0);
 
@@ -268,6 +283,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(apiBody),
+                signal: controller.signal,
             });
 
             if (!response.ok || !response.body) {
@@ -420,6 +436,11 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         }
 
                         clearAttachedFiles();
+                        // โหมด "สร้างรายงาน" — เนื้อหาเต็มแสดงทางขวาแล้ว (ผ่าน text_chunk)
+                        // ฝั่งซ้ายแสดงแค่ป้ายบอกทาง ไม่ต้องซ้ำเนื้อหาทั้งหมดอีกรอบ
+                        const leftPaneText = isReportGather
+                            ? "สร้างรายงานสรุปข้อมูลพื้นฐานเสร็จแล้ว — ดูรายละเอียดทั้งหมดได้ที่ช่อง \"ข้อมูลพื้นฐาน\" ด้านขวา →"
+                            : (event.message as string);
                         const completedState: ChatSessionState = {
                             ...getChatSessionState(sessionId),
                             sessionId,
@@ -427,7 +448,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                             error: undefined,
                             messages: [
                                 ...getChatSessionState(sessionId).messages,
-                                createChatSessionMessage("ai", event.message as string, agentSteps, sourceFile),
+                                createChatSessionMessage("ai", leftPaneText, agentSteps, sourceFile),
                             ],
                             lastUserPrompt: trimmedMessage,
                         };
@@ -440,14 +461,29 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 }
             }
         } catch (error) {
-            // ── refresh / ปิดแท็บ / abort ─────────────────────────────────────
+            const isAbort = error instanceof Error && error.name === "AbortError";
+
+            // ── refresh / ปิดแท็บ ─────────────────────────────────────────────
             // อย่าเขียน "failed" ทับ — ปล่อย status="running" ไว้ ให้ backend รันต่อ
             // จนจบและบันทึกผลลง DB แล้ว recovery polling จะโหลดผลกลับมาเอง
-            const isNavigationAbort =
-                isUnloadingRef.current ||
-                (error instanceof Error && error.name === "AbortError");
-            if (isNavigationAbort) {
+            if (isUnloadingRef.current) {
                 return; // finally ยังทำงาน (setIsSubmitting(false))
+            }
+
+            // ── ผู้ใช้กดปุ่ม stop เอง ────────────────────────────────────────────
+            // เคลียร์สถานะ "กำลังทำงาน" ทันที ไม่รอ backend — ต่างจาก refresh ตรงที่
+            // ผู้ใช้ตั้งใจยกเลิกจริง ๆ ไม่ต้องการให้คำตอบโผล่มาทีหลัง
+            if (isAbort) {
+                clearStreamingState(sessionId);
+                const stoppedState: ChatSessionState = {
+                    ...getChatSessionState(sessionId),
+                    sessionId,
+                    status: "idle",
+                    error: undefined,
+                };
+                saveChatSessionState(sessionId, stoppedState);
+                void persistHistory(sessionId, stoppedState);
+                return;
             }
 
             clearStreamingState(sessionId);
@@ -467,6 +503,11 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    /** ยกเลิกการตอบกลับที่กำลังสตรีมอยู่ — ปุ่มส่งกลายเป็นปุ่ม stop ตอน isSubmitting */
+    const handleStop = () => {
+        abortControllerRef.current?.abort();
     };
 
     /** อ่านไฟล์เป็น base64 ในเบราว์เซอร์ — ไม่ upload ไปที่ใดเลย */
@@ -705,26 +746,43 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 </div>
             )}
 
-            <div className="flex items-center w-full bg-[#f8f9fb] border border-gray-200 rounded-xl px-3 py-1.5 transition-all focus-within:border-gray-300 focus-within:bg-white text-sm">
-                <HiOutlineLightBulb size={18} className="text-[#db5b24] mr-2.5" />
-                <input
-                    type="text"
+            <div className="flex items-end w-full bg-[#f8f9fb] border border-gray-200 rounded-xl px-3 py-1.5 transition-all focus-within:border-gray-300 focus-within:bg-white text-sm">
+                <HiOutlineLightBulb size={18} className="text-[#db5b24] mr-2.5 mb-1" />
+                <textarea
+                    ref={textareaRef}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") void handleSend(); }}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void handleSend();
+                        }
+                        // Shift+Enter → ปล่อยพฤติกรรมปกติของ textarea (ขึ้นบรรทัดใหม่)
+                    }}
                     placeholder={
                         selectedTools.length === 0
                             ? "พิมพ์ข้อความของคุณ..."
                             : `ถามด้วย ${selectedTools.map(id => TOOL_DEFS.find(d => d.id === id)?.labelTh).join(" + ")}...`
                     }
-                    className="flex-1 outline-none bg-transparent text-gray-700 placeholder-gray-400 py-1"
+                    rows={1}
+                    className="flex-1 outline-none bg-transparent text-gray-700 placeholder-gray-400 py-1 resize-none max-h-[160px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                 />
                 <button
-                    onClick={() => { void handleSend(); }}
-                    disabled={!message.trim() || isSubmitting}
-                    className="bg-[#949eb0] hover:bg-[#7b8599] text-white rounded-lg p-1.5 ml-2 disabled:opacity-50 transition-colors flex items-center justify-center transform hover:scale-105 active:scale-95"
+                    onClick={() => { isSubmitting ? handleStop() : void handleSend(); }}
+                    disabled={!isSubmitting && !message.trim()}
+                    title={isSubmitting ? "หยุดการตอบกลับ" : "ส่งข้อความ"}
+                    className={`text-white rounded-lg p-1.5 ml-2 mb-0.5 disabled:opacity-50 transition-all duration-150 flex items-center justify-center transform hover:scale-105 active:scale-90 ${
+                        isSubmitting
+                            ? "bg-[#2f9e44] hover:bg-[#268a3a] animate-pulse"
+                            : message.trim()
+                                ? "bg-[#f5b400] hover:bg-[#dba300] active:bg-[#e03131]"
+                                : "bg-[#949eb0] hover:bg-[#7b8599]"
+                    }`}
                 >
-                    <IoSend size={16} className="translate-x-0.5 -translate-y-0.5" />
+                    {isSubmitting
+                        ? <IoStop size={16} />
+                        : <IoSend size={16} className="translate-x-0.5 -translate-y-0.5" />
+                    }
                 </button>
             </div>
 

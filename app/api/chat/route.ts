@@ -1,6 +1,91 @@
 import { requireAuth, internalHeaders, PYTHON_API_URL } from "@/lib/internalFetch";
+import pool from "@/lib/db";
 
 const PYTHON_API = PYTHON_API_URL;
+
+/**
+ * Consume a teed copy of the SSE stream server-side and persist the final
+ * answer to chat_sessions once the pipeline finishes — even if the browser
+ * tab that started the request is gone (refresh/close). Without this, only
+ * the original tab's own fetch-reading loop (ChatInput.tsx) ever writes the
+ * "done" status, so a client-side disconnect leaves status="running" forever
+ * and the recovery polling in LeftPane.tsx never resolves.
+ *
+ * Guarded by `AND status = 'running'` so it never clobbers the richer result
+ * the client itself already persisted when it was still connected.
+ */
+async function persistFallbackCompletion(
+  stream: ReadableStream<Uint8Array>,
+  sessionId: string,
+  userId: string,
+) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalText = "";
+  let isError = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data: ")) continue;
+        let ev: Record<string, unknown>;
+        try {
+          ev = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
+        const type = ev.type as string | undefined;
+        if (type === "error") {
+          isError = true;
+          finalText = (ev.message as string) || "เกิดข้อผิดพลาดระหว่างประมวลผล";
+        } else if (type === "final" || type === "result") {
+          const text =
+            (ev.content as string) || (ev.message as string) ||
+            (ev.textResult as string) || (ev.reportHtml as string);
+          if (text) finalText = text;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[chat fallback-persist] stream read error:", error);
+    return;
+  }
+
+  if (!finalText) return;
+
+  try {
+    const assistantMessage = {
+      id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: "assistant",
+      text: finalText,
+      timestamp: new Intl.DateTimeFormat("th-TH", { hour: "2-digit", minute: "2-digit" }).format(new Date()),
+    };
+
+    const existing = await pool.query(
+      `SELECT messages_json FROM chat_sessions WHERE session_id = $1 AND user_id = $2 AND status = 'running' LIMIT 1`,
+      [sessionId, userId],
+    );
+    if (!existing.rows.length) return; // client already resolved it, or session isn't ours
+
+    const messages = [...(existing.rows[0].messages_json ?? []), assistantMessage];
+
+    await pool.query(
+      `UPDATE chat_sessions
+       SET status = $3, messages_json = $4::jsonb, updated_at = NOW()
+       WHERE session_id = $1 AND user_id = $2 AND status = 'running'`,
+      [sessionId, userId, isError ? "error" : "done", JSON.stringify(messages)],
+    );
+  } catch (error) {
+    console.error("[chat fallback-persist] db write error:", error);
+  }
+}
 
 type ChatBody = {
   mode?: string;
@@ -79,7 +164,17 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ error: err }), { status: upstream.status });
   }
 
-  return new Response(upstream.body, {
+  const sessionId = body.sessionId?.trim();
+  let clientStream = upstream.body;
+
+  if (sessionId && clientStream) {
+    const [forClient, forServer] = clientStream.tee();
+    clientStream = forClient;
+    // Fire-and-forget — must not block the response to the browser.
+    void persistFallbackCompletion(forServer, sessionId, auth.userId);
+  }
+
+  return new Response(clientStream, {
     headers: {
       "Content-Type":      "text/event-stream",
       "Cache-Control":     "no-cache",

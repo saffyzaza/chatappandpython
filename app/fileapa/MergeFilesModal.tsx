@@ -44,7 +44,7 @@ const PIPELINE_STEPS = [
 ]
 
 const DOMAIN_OPTIONS = [
-  { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental_Health/' },
+  { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental Health/' },
   { id: 'D3', label: 'D3_NCDs',          path: 'D3_NCDs/' },
   { id: 'D4', label: 'D4_Nutrition',     path: 'D4_Nutrition/' },
 ]
@@ -57,15 +57,15 @@ function suggestDomain(fileName: string): SuggestedDomain {
 
   // D2: Mental Health
   if (lower.includes('ซึมเศร้า') || lower.includes('depression'))
-    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental_Health/', folderName: 'D2_Mental_Health', subfolder: 'โรคซึมเศร้า', reason: 'พบคำเกี่ยวกับโรคซึมเศร้า' }
+    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental Health/', folderName: 'D2_Mental Health', subfolder: 'โรคซึมเศร้า', reason: 'พบคำเกี่ยวกับโรคซึมเศร้า' }
   if (lower.includes('ฆ่าตัวตาย') || lower.includes('suicide'))
-    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental_Health/', folderName: 'D2_Mental_Health', subfolder: 'การฆ่าตัวตาย', reason: 'พบคำเกี่ยวกับการฆ่าตัวตาย' }
+    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental Health/', folderName: 'D2_Mental Health', subfolder: 'การฆ่าตัวตาย', reason: 'พบคำเกี่ยวกับการฆ่าตัวตาย' }
   if (lower.includes('จิตเวช') || lower.includes('psychosis') || lower.includes('psychiatric'))
-    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental_Health/', folderName: 'D2_Mental_Health', subfolder: 'โรคจิตเวช', reason: 'พบคำเกี่ยวกับโรคจิตเวช' }
+    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental Health/', folderName: 'D2_Mental Health', subfolder: 'โรคจิตเวช', reason: 'พบคำเกี่ยวกับโรคจิตเวช' }
   if (lower.includes('เครียด') || lower.includes('stress'))
-    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental_Health/', folderName: 'D2_Mental_Health', subfolder: 'ความเครียด', reason: 'พบคำเกี่ยวกับความเครียด' }
+    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental Health/', folderName: 'D2_Mental Health', subfolder: 'ความเครียด', reason: 'พบคำเกี่ยวกับความเครียด' }
   if (lower.includes('จิต') || lower.includes('mental'))
-    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental_Health/', folderName: 'D2_Mental_Health', subfolder: 'สุขภาพจิต', reason: 'พบคำเกี่ยวกับสุขภาพจิต' }
+    return { id: 'D2', label: 'D2_Mental Health', path: 'D2_Mental Health/', folderName: 'D2_Mental Health', subfolder: 'สุขภาพจิต', reason: 'พบคำเกี่ยวกับสุขภาพจิต' }
 
   // D3: NCDs
   if (lower.includes('เบาหวาน') || lower.includes('diabetes') || lower.includes('dm'))
