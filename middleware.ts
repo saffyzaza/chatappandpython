@@ -9,7 +9,7 @@ export async function middleware(req: NextRequest) {
 
   const isPublic =
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/favicon') ||
     pathname.match(/\.(png|jpg|jpeg|gif|svg|ico|webp)$/);

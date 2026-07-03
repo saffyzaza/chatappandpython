@@ -47,13 +47,10 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=1234
       - REDIS_URL=redis://redis:6379/0
-      - OBSIDIAN_VAULT_PATH=/app/src/obsidian_knowledge
-      - OBSIDIAN_DEFAULT_VAULT=health_region_10
-      - OBSIDIAN_ENABLED=true
       # ต้องตรงกับ INTERNAL_API_KEY ของ frontend
       - INTERNAL_API_KEY=dev-internal-musya-2f8a3b1c9e7d4f6a-CHANGE-FOR-PROD
     volumes:
-      - ../chatapi.python/src/obsidian_knowledge:/app/src/obsidian_knowledge
+      - ../chatapi.python/src:/app/src
     depends_on:
       postgres:
         condition: service_healthy
