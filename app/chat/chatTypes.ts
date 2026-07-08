@@ -25,6 +25,13 @@ export type SourceFile = {
   name: string;         // original filename
 };
 
+export type ObsidianNoteRef = {
+  note_id: string;
+  title: string;
+  province?: string;
+  district?: string;
+};
+
 export type ChatSessionMessage = {
   id: string;
   role: ChatMessageRole;
@@ -32,6 +39,8 @@ export type ChatSessionMessage = {
   timestamp: string;
   agentSteps?: AgentStep[];
   sourceFile?: SourceFile;
+  notesReferenced?: ObsidianNoteRef[];
+  followUps?: string[];
 };
 
 export type ChatSessionState = {
@@ -40,6 +49,7 @@ export type ChatSessionState = {
   messages: ChatSessionMessage[];
   lastUserPrompt?: string;
   error?: string;
+  startedAt?: number; // Unix ms — set when request starts, used for elapsed timer
 };
 
 export type ChatRouteRequest = {

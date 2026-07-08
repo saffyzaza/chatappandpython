@@ -66,11 +66,6 @@ export default function FileViewPage() {
     loadFile()
   }, [params.fileRoute])
 
-  const handleToggleFullscreen = () => {
-    // For file view page, fullscreen doesn't make sense
-    // We can add a separate fullscreen modal if needed
-  }
-
   const handleBackToExplorer = () => {
     router.push('/fileapa')
   }
@@ -117,8 +112,8 @@ export default function FileViewPage() {
         <div className="flex-1 min-h-0">
           <Viewfile
             entry={entry}
-            isFullscreen={false}
-            onToggleFullscreen={handleToggleFullscreen}
+            isFullscreen={true}
+            onToggleFullscreen={handleBackToExplorer}
           />
         </div>
       </div>

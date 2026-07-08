@@ -1,3 +1,3 @@
 -- Frontend tables (accounts, chat_sessions, journal_reports) are created
--- by ../python-ai/database/schema.sql (01_schema.sql) in accident_db.
+-- by ../python-ai/database/schema.sql (01_schema.sql) in musyadata.
 -- This file is intentionally empty.

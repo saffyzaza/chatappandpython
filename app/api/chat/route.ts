@@ -1,23 +1,29 @@
-const PYTHON_API = process.env.PYTHON_API_URL ?? "http://localhost:8000";
+import { requireAuth, internalHeaders, PYTHON_API_URL } from "@/lib/internalFetch";
+
+const PYTHON_API = PYTHON_API_URL;
 
 type ChatBody = {
   mode?: string;
   sessionId?: string;
   prompt?: string;
   doc_type?: string;
+  tools?: string[];
   attached_files?: { id: string; name: string }[];
   [key: string]: unknown;
 };
 
+// Modes that go to a dedicated endpoint (single-tool operations)
 const MODE_ENDPOINT: Record<string, string> = {
   thaijo:   "/api/thaijo",
   compare:  "/api/compare",
   report:   "/api/report",
-  workplan: "/api/workplan",
   database: "/api/database",
 };
 
 export async function POST(req: Request) {
+  const auth = await requireAuth();
+  if (auth instanceof Response) return auth;
+
   const body = await req.json() as ChatBody;
   const mode = body.mode ?? "normal";
 
@@ -45,18 +51,27 @@ export async function POST(req: Request) {
     upstreamBody = {
       sessionId:      body.sessionId ?? "",
       prompt:         body.prompt ?? "",
+      history:        body.history ?? [],
       attached_files: body.attached_files ?? [],
       doc_type:       body.doc_type ?? "workplan",
     };
   } else {
+    // normal / stats / obsidian / multi → /api/analyze
     upstreamUrl = `${PYTHON_API}/api/analyze`;
-    upstreamBody = body;
+    upstreamBody = {
+      sessionId: body.sessionId ?? "",
+      prompt:    body.prompt ?? "",
+      history:   body.history ?? [],
+      mode,
+      tools:     body.tools ?? [],
+    };
   }
 
   const upstream = await fetch(upstreamUrl, {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: internalHeaders({ "Content-Type": "application/json" }),
     body:    JSON.stringify(upstreamBody),
+    signal:  AbortSignal.timeout(600_000), // 10-minute max for long AI pipelines
   });
 
   if (!upstream.ok) {

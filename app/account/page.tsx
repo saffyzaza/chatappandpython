@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 interface AccountUser {
   id: string;
@@ -26,8 +27,28 @@ interface AccountUser {
 type FormData = Omit<AccountUser, 'id' | 'email' | 'role' | 'status' | 'approved_at' | 'created_at'>;
 
 const ROLE_LABELS: Record<string, string> = {
-  admin: 'ผู้ดูแลระบบ (Admin)',
-  user: 'ผู้ใช้งาน (User)',
+  user:       'ผู้ใช้งาน (User)',
+  admin:      'ผู้ดูแลระบบ (Admin)',
+  adminsuper: 'ผู้ดูแลสูงสุด (Super Admin)',
+};
+
+type PageLink = { href: string; label: string; icon: string; color: string };
+
+const ROLE_PAGES: Record<string, PageLink[]> = {
+  user: [],
+  admin: [
+    { href: '/fileapa',            label: 'จัดการไฟล์',        icon: '📁', color: 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100' },
+    { href: '/musyaend/obsidian',  label: 'Obsidian Knowledge', icon: '🌿', color: 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' },
+    { href: '/pdf-upload',         label: 'PDF Ingest',         icon: '📄', color: 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' },
+    { href: '/musyaend/db-explorer', label: 'DB Explorer',      icon: '🗄️', color: 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100' },
+  ],
+  adminsuper: [
+    { href: '/fileapa',            label: 'จัดการไฟล์',        icon: '📁', color: 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100' },
+    { href: '/musyaend/obsidian',  label: 'Obsidian Knowledge', icon: '🌿', color: 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' },
+    { href: '/musyaend',           label: 'ระบบ AI Chat',       icon: '🤖', color: 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100' },
+    { href: '/musyaend/db-explorer', label: 'DB Explorer',      icon: '🗄️', color: 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100' },
+    { href: '/pdf-upload',         label: 'PDF Ingest',         icon: '📄', color: 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100' },
+  ],
 };
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -97,6 +118,19 @@ function Toast({ msg, onClose }: { msg: { type: 'success' | 'error'; text: strin
       ${msg.type === 'success' ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-800'}`}>
       <span>{msg.type === 'success' ? '✓' : '✕'} {msg.text}</span>
       <button onClick={onClose} className="ml-2 text-gray-400 hover:text-gray-600">✕</button>
+    </div>
+  );
+}
+
+function ForbiddenBanner({ role }: { role?: string }) {
+  const searchParams = useSearchParams();
+  if (searchParams.get('forbidden') !== '1') return null;
+  return (
+    <div className="mx-auto w-full max-w-7xl">
+      <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700">
+        <span className="text-base">🚫</span>
+        <span>คุณไม่มีสิทธิ์เข้าถึงหน้านั้น — สิทธิ์ของคุณคือ <strong>{ROLE_LABELS[role ?? ''] ?? role ?? 'ไม่ทราบ'}</strong></span>
+      </div>
     </div>
   );
 }
@@ -218,6 +252,7 @@ export default function AccountPage() {
   }
 
   const statusInfo = STATUS_LABELS[user.status] ?? { label: user.status, color: 'text-gray-700 bg-gray-50 border-gray-200' };
+  const pageLinks = ROLE_PAGES[user.role] ?? [];
   const joinDate = new Date(user.created_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
   const approvedDate = user.approved_at
     ? new Date(user.approved_at).toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -226,6 +261,10 @@ export default function AccountPage() {
   return (
     <main className="min-h-screen bg-[#fcfbf9] px-4 py-6 md:px-6 lg:px-8">
       {toast && <Toast msg={toast} onClose={() => setToast(null)} />}
+
+      <Suspense fallback={null}>
+        <ForbiddenBanner role={user?.role} />
+      </Suspense>
 
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
 
@@ -266,6 +305,21 @@ export default function AccountPage() {
                     </p>
                   </div>
                 </div>
+
+                {pageLinks.length > 0 && (
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    {pageLinks.map((p) => (
+                      <a
+                        key={p.href}
+                        href={p.href}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${p.color}`}
+                      >
+                        <span>{p.icon}</span>
+                        <span>{p.label}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
 
                 {!editing ? (
                   <button

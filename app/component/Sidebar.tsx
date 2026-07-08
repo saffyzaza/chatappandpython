@@ -23,6 +23,17 @@ type ChatHistoryItem = {
 
 const MENU_ITEMS = [
     {
+        key: 'journal-library',
+        label: 'Journal Library',
+        href: '/journal',
+        shortcut: '',
+        icon: IoLibraryOutline,
+        iconSize: 16,
+        iconContainerClass: 'w-6 h-6 flex items-center justify-center shrink-0',
+        badge: '',
+        badgeClass: 'ml-auto bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px]'
+    },
+    {
         key: 'new-chat',
         label: 'New chat',
         href: '/chat',
@@ -53,17 +64,6 @@ const MENU_ITEMS = [
         badge: '',
         badgeClass: 'ml-auto bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px]'
     },
-    {
-        key: 'journal-library',
-        label: 'Journal Library',
-        href: '/journal',
-        shortcut: '',
-        icon: IoLibraryOutline,
-        iconSize: 16,
-        iconContainerClass: 'w-6 h-6 flex items-center justify-center shrink-0',
-        badge: '',
-        badgeClass: 'ml-auto bg-gray-300 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px]'
-    }
 ];
 
 type SidebarProps = {
@@ -534,7 +534,14 @@ export const Sidebar = ({ showDatabaseExplorer = false }: SidebarProps) => {
 
     return (
         <>
-            <div className={clsx("h-screen overflow-hidden bg-[#f7f4f3f1] p-3 rounded-lg border border-gray-100 transition-all duration-300 flex flex-col", sidebarExpanded ? "w-64" : "w-14")}>
+            <div className={clsx("relative z-30 h-screen overflow-hidden bg-[#f7f4f3f1] p-3 rounded-lg border border-gray-100 transition-all duration-300 flex flex-col", sidebarExpanded ? "w-64" : "w-14")}>
+                {/* ⚠️ relative + z-30: ทำให้ sidebar มี stacking context ของตัวเอง และอยู่
+                    "เหนือ" เนื้อหาหลัก/องค์ประกอบทั่วไปที่ไม่ได้ตั้ง z-index (รวมถึง
+                    z-10/z-20 ที่บางหน้าใช้กับปุ่ม/ตัว resizer ภายในพื้นที่เนื้อหา)
+                    เดิม div นี้ไม่มี position/z-index เลย จึงอาจถูกองค์ประกอบอื่นที่ตั้ง
+                    z-index ไว้ (แม้ค่าน้อย) render ทับบางส่วนจนดูเหมือนถูกบีบ/ซ้อนกัน —
+                    z-30 ยังต่ำกว่า dropdown/tooltip ภายใน sidebar เอง (z-50, 9999) และ
+                    modal ทั่วทั้งแอป (z-40/z-50) จึงไม่ดันสิ่งเหล่านั้นให้ลอยต่ำกว่า sidebar */}
 
                 <div className="flex items-center justify-between mb-4">
                     <Image

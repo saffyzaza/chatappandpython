@@ -37,6 +37,8 @@ services:
       - MINIO_ENDPOINT=minio
       - DB_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - obsidian_knowledge:/app/src/obsidian_knowledge
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,7 +52,7 @@ services:
     container_name: chatapp-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: accident_db
+      POSTGRES_DB: musyadata
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 1234
     ports:
@@ -58,7 +60,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d accident_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d musyadata"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,3 +94,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  obsidian_knowledge:
