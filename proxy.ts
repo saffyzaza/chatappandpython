@@ -4,7 +4,7 @@ import { jwtVerify } from 'jose';
 const COOKIE_NAME = 'auth_token';
 const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const isPublic =

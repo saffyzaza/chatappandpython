@@ -5,7 +5,7 @@ import { IoSend, IoStop } from "react-icons/io5";
 import { HiOutlineLightBulb, HiOutlineSparkles } from "react-icons/hi";
 import {
     FiPlus, FiList, FiPaperclip, FiImage, FiCamera,
-    FiDatabase, FiSearch, FiX, FiActivity, FiBookOpen, FiBook, FiClipboard,
+    FiSearch, FiX, FiActivity, FiBookOpen, FiBook, FiClipboard,
 } from "react-icons/fi";
 import {
     getAttachedFiles,
@@ -73,7 +73,7 @@ const TOOL_DEFS = [
     {
         id: "thaijo",
         labelTh: "วิจัย",
-        desc: "ค้นหาและสังเคราะห์บทความวิจัยจากฐานข้อมูล ThaiJo",
+        desc: "ค้นหาและสังเคราะห์บทความวิจัยจาก ThaiJo และ PubMed",
         bgColor: "#eef5ee", borderColor: "#aad5b8", textColor: "#1a6b3c",
         activeIconColor: "#2e9e5b",
         Icon: FiBookOpen,
@@ -86,36 +86,34 @@ const TOOL_DEFS = [
         activeIconColor: "#0d9488",
         Icon: FiBook,
     },
-    {
-        id: "pubmed",
-        labelTh: "ค้นหา PubMed",
-        desc: "ค้นหางานวิจัยทางการแพทย์จาก PubMed (เฉพาะบทความ Free Full Text)",
-        bgColor: "#eff6ff", borderColor: "#93c5fd", textColor: "#1d4ed8",
-        activeIconColor: "#2563eb",
-        Icon: FiDatabase,
-    },
 ] as const;
 
 type ToolId = typeof TOOL_DEFS[number]["id"];
+
+// "วิจัย" มี sub-source ให้เลือกได้ว่าจะค้น ThaiJo, PubMed หรือทั้งสองอย่าง (ค่าเริ่มต้น)
+type ResearchSource = "thaijo" | "pubmed";
+const ALL_RESEARCH_SOURCES: ResearchSource[] = ["thaijo", "pubmed"];
+const RESEARCH_SOURCE_LABELS: Record<ResearchSource, string> = {
+    thaijo: "ThaiJo",
+    pubmed: "PubMed",
+};
 
 const TOOL_MODE_MAP: Record<ToolId, string> = {
     stats:           "stats",
     report:          "report",
     tavily:          "tavily",
-    thaijo:          "thaijo",
+    thaijo:          "thaijo", // ค่า fallback — mode จริงคำนวณจาก researchSources (ดู getEffectiveMode)
     obsidian:        "obsidian",
-    pubmed:          "pubmed",
 };
 
-// เครื่องมือที่ "สร้างรายงาน" จะดึงข้อมูลอัตโนมัติ
-const REPORT_DATA_SOURCES: ToolId[] = ["stats", "obsidian", "thaijo", "tavily", "pubmed"];
+// เครื่องมือที่ "สร้างรายงาน" จะดึงข้อมูลอัตโนมัติ (backend รวม ThaiJo + PubMed เสมอ)
+const REPORT_DATA_SOURCES: ToolId[] = ["stats", "obsidian", "thaijo", "tavily"];
 
 const DATA_LABELS: Partial<Record<ToolId, string>> = {
     thaijo:   "บทความวิจัย",
     obsidian: "คลังความรู้",
     stats:    "สถิติ",
     tavily:   "ค้นหา",
-    pubmed:   "PubMed",
 };
 
 const _emptySnapshot: never[] = [];
@@ -132,6 +130,10 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [showToolsMenu, setShowToolsMenu] = useState(false);
     const [selectedTools, setSelectedTools] = useState<ToolId[]>([]);
+    // sub-source ของเครื่องมือ "วิจัย" — ค่าเริ่มต้นเลือกทั้ง ThaiJo และ PubMed
+    const [researchSources, setResearchSources] = useState<Set<ResearchSource>>(
+        () => new Set(ALL_RESEARCH_SOURCES)
+    );
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef  = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -157,6 +159,19 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         setSelectedTools(prev => prev.filter(t => t !== id));
     };
 
+    /** สลับ sub-source ของ "วิจัย" — กันไม่ให้ยกเลิกจนเหลือ 0 แหล่ง (ต้องมีอย่างน้อย 1) */
+    const toggleResearchSource = (src: ResearchSource) => {
+        setResearchSources(prev => {
+            const next = new Set(prev);
+            if (next.has(src)) {
+                if (next.size > 1) next.delete(src);
+            } else {
+                next.add(src);
+            }
+            return next;
+        });
+    };
+
     /** Compute the API mode from selected tools */
     const getEffectiveMode = (tools: ToolId[], hasFiles: boolean): string => {
         // Files attached → force database mode
@@ -165,7 +180,19 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         // report → รวบรวมจาก 3 แหล่ง (thaijo + obsidian + stats) แล้วเปิด wizard
         if (tools.includes("report")) return "report-gather";
         const nonReport = tools.filter(t => t !== "report");
-        if (nonReport.length === 1) return TOOL_MODE_MAP[nonReport[0]] ?? "thaijo";
+        if (nonReport.length === 1) {
+            const only = nonReport[0];
+            // "วิจัย" ตัดสินโหมดจริงจาก sub-source ที่เลือก: ทั้งคู่ → research,
+            // เลือกแค่อย่างเดียว → ส่งตรงไป thaijo หรือ pubmed
+            if (only === "thaijo") {
+                const hasThaijo = researchSources.has("thaijo");
+                const hasPubmed = researchSources.has("pubmed");
+                if (hasThaijo && hasPubmed) return "research";
+                if (hasPubmed) return "pubmed";
+                return "thaijo";
+            }
+            return TOOL_MODE_MAP[only] ?? "thaijo";
+        }
         return "multi";
     };
 
@@ -337,7 +364,19 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         } else {
                             const dataTools = effectiveTools.filter(t => t !== "report");
                             const _toolLabel = dataTools.length > 0
-                                ? dataTools.map(t => DATA_LABELS[t] ?? t).join(" + ")
+                                ? dataTools.map(t => {
+                                    // "วิจัย" label ขึ้นกับ sub-source ที่เลือกจริง ไม่ใช่ label คงที่
+                                    if (t === "thaijo") {
+                                        const hasThaijo = researchSources.has("thaijo");
+                                        const hasPubmed = researchSources.has("pubmed");
+                                        // เลือกทั้งสองแหล่ง (โหมด research) → หัวข้อฝั่งขวาเรียก "ข้อมูลพื้นฐาน"
+                                        // เหมือนโหมด "สร้างรายงาน" เพราะเนื้อหาซ้อนหลายแหล่งเข้าด้วยกัน
+                                        if (hasThaijo && hasPubmed) return "ข้อมูลพื้นฐาน";
+                                        if (hasPubmed) return "PubMed";
+                                        return "บทความวิจัย (ThaiJo)";
+                                    }
+                                    return DATA_LABELS[t] ?? t;
+                                }).join(" + ")
                                 : "ผลลัพธ์";
                             startThaijoTextStream(false, _toolLabel);
                         }
@@ -631,6 +670,10 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         const def = TOOL_DEFS.find(d => d.id === id);
                         if (!def) return null;
                         const { labelTh, bgColor, borderColor, textColor, Icon } = def;
+                        // "วิจัย" แสดง sub-source ที่เลือกต่อท้าย label
+                        const displayLabel = id === "thaijo"
+                            ? `${labelTh} (${[...researchSources].map(s => RESEARCH_SOURCE_LABELS[s]).join(" + ")})`
+                            : labelTh;
                         return (
                             <div
                                 key={id}
@@ -638,7 +681,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                                 style={{ backgroundColor: bgColor, border: `1px solid ${borderColor}`, color: textColor }}
                             >
                                 <Icon size={12} />
-                                <span>{labelTh}</span>
+                                <span>{displayLabel}</span>
                                 <button
                                     type="button"
                                     onClick={() => removeTool(id)}
@@ -701,49 +744,77 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                     {TOOL_DEFS.map(({ id, labelTh, desc, bgColor, borderColor, textColor, activeIconColor, Icon }) => {
                         const isActive = selectedTools.includes(id as ToolId);
                         return (
-                            <button
-                                key={id}
-                                onClick={() => {
-                                    const newId = id as ToolId;
-                                    setSelectedTools(prev => prev.includes(newId) ? [] : [newId]);
-                                    setShowToolsMenu(false);
-                                }}
-                                className={`flex items-start gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left border ${
-                                    isActive ? "" : "border-transparent hover:bg-gray-50"
-                                }`}
-                                style={isActive ? {
-                                    backgroundColor: bgColor,
-                                    borderColor,
-                                    color: textColor,
-                                } : { color: "#334155" }}
-                            >
-                                {/* Checkbox indicator */}
-                                <div
-                                    className="mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all"
-                                    style={isActive
-                                        ? { backgroundColor: textColor, border: "none" }
-                                        : { border: "1.5px solid #cbd5e1", backgroundColor: "white" }
-                                    }
+                            <div key={id}>
+                                <button
+                                    onClick={() => {
+                                        const newId = id as ToolId;
+                                        setSelectedTools(prev => prev.includes(newId) ? [] : [newId]);
+                                        setShowToolsMenu(false);
+                                    }}
+                                    className={`flex items-start gap-3 w-full px-3 py-2.5 text-sm rounded-lg transition-colors text-left border ${
+                                        isActive ? "" : "border-transparent hover:bg-gray-50"
+                                    }`}
+                                    style={isActive ? {
+                                        backgroundColor: bgColor,
+                                        borderColor,
+                                        color: textColor,
+                                    } : { color: "#334155" }}
                                 >
-                                    {isActive && (
-                                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 12 12">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
-                                        </svg>
-                                    )}
-                                </div>
-                                <Icon
-                                    size={17}
-                                    className="shrink-0 mt-0.5"
-                                    style={{ color: isActive ? activeIconColor : "#64748b" }}
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-semibold leading-tight">{labelTh}</p>
-                                    <p className="text-[11px] mt-0.5 leading-snug"
-                                        style={{ color: isActive ? textColor : "#94a3b8" }}>
-                                        {desc}
-                                    </p>
-                                </div>
-                            </button>
+                                    {/* Checkbox indicator */}
+                                    <div
+                                        className="mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 transition-all"
+                                        style={isActive
+                                            ? { backgroundColor: textColor, border: "none" }
+                                            : { border: "1.5px solid #cbd5e1", backgroundColor: "white" }
+                                        }
+                                    >
+                                        {isActive && (
+                                            <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 12 12">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                    <Icon
+                                        size={17}
+                                        className="shrink-0 mt-0.5"
+                                        style={{ color: isActive ? activeIconColor : "#64748b" }}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-semibold leading-tight">{labelTh}</p>
+                                        <p className="text-[11px] mt-0.5 leading-snug"
+                                            style={{ color: isActive ? textColor : "#94a3b8" }}>
+                                            {desc}
+                                        </p>
+                                    </div>
+                                </button>
+                                {/* "วิจัย" — sub-source ให้เลือก ThaiJo / PubMed เมื่อถูกเลือกอยู่ */}
+                                {id === "thaijo" && isActive && (
+                                    <div
+                                        className="ml-9 mr-2 mb-1 mt-0.5 flex flex-col gap-0.5 border-l-2 pl-2.5"
+                                        style={{ borderColor }}
+                                    >
+                                        {ALL_RESEARCH_SOURCES.map((src) => {
+                                            const checked = researchSources.has(src);
+                                            return (
+                                                <label
+                                                    key={src}
+                                                    className="flex items-center gap-2 px-1.5 py-1 rounded-md text-xs cursor-pointer hover:bg-gray-50"
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => toggleResearchSource(src)}
+                                                        className="w-3.5 h-3.5 rounded accent-[#2e9e5b] cursor-pointer"
+                                                    />
+                                                    <span style={{ color: checked ? textColor : "#94a3b8" }}>
+                                                        {RESEARCH_SOURCE_LABELS[src]}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         );
                     })}
                     {selectedTools.length > 0 && (
