@@ -103,6 +103,7 @@ const MODE_ENDPOINT: Record<string, string> = {
   compare:  "/api/compare",
   report:   "/api/report",
   database: "/api/database",
+  pubmed:   "/api/pubmed",
 };
 
 export async function POST(req: Request) {

@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: '2gb',
     },
+    // middleware.ts รันกับทุก path (รวม /api/pdf/upload) เพราะต้องเช็ค JWT ก่อนส่งต่อ
+    // Next.js 16 จำกัด body ที่ผ่าน middleware ไว้แค่ 10MB โดย default ทำให้ไฟล์ PDF
+    // ที่ใหญ่กว่านั้นถูกตัดทิ้งกลางทาง เกิด "Failed to parse body as FormData"
+    proxyClientMaxBodySize: '2gb',
   },
 
   async rewrites() {

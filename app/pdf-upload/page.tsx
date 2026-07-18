@@ -14,6 +14,9 @@ type UploadedPdf = {
   province?: string | null
   district?: string | null
   saved_at?: string | null
+  note_id?: string | null
+  location_confidence?: string | null
+  notes_count?: number  // จำนวน chunks ที่ ingest แล้วใน DB
 }
 
 type ProgressLog = { msg: string; status: string }
@@ -37,6 +40,8 @@ type VaultNode = {
   size?: number
   modified_at?: number
   children?: VaultNode[]
+  file_id?: string | null   // MinIO object key (from DB, for PDF preview)
+  is_index?: boolean
 }
 
 type VaultData = {
@@ -156,6 +161,7 @@ type VaultActions = {
   onEdit: (node: VaultNode) => void
   onDelete: (node: VaultNode) => void
   onRename: (node: VaultNode) => void
+  onPreviewPdf: (fileId: string, name: string) => void
 }
 
 function VaultTreeNode({ node, depth = 0, actions }: { node: VaultNode; depth?: number; actions: VaultActions }) {
@@ -187,6 +193,14 @@ function VaultTreeNode({ node, depth = 0, actions }: { node: VaultNode; depth?: 
         )}
         {/* Action buttons — show on hover */}
         <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-none ml-1">
+          {/* PDF Preview button — show on doc folders that have a file_id */}
+          {isFolder && node.file_id && (
+            <button
+              onClick={e => { e.stopPropagation(); actions.onPreviewPdf(node.file_id!, node.name) }}
+              className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+              title="ดู PDF ต้นฉบับ"
+            >👁️</button>
+          )}
           {!isFolder && (
             <button
               onClick={e => { e.stopPropagation(); actions.onEdit(node) }}
@@ -285,6 +299,7 @@ export default function PdfUploadPage() {
   const [logs, setLogs] = useState<ProgressLog[]>([])
   const [ingestResult, setIngestResult] = useState<IngestResult | null>(null)
   const [activeTab, setActiveTab] = useState<'viewer' | 'logs' | 'vault'>('viewer')
+  const [vaultSubTab, setVaultSubTab] = useState<'tree' | 'dbstats'>('tree')
   const [vaultData, setVaultData] = useState<VaultData>({ zone10: [], root_files: [], provinces: [] })
   const [pollingJobId, setPollingJobId] = useState<string | null>(null)
   const [filterProvince, setFilterProvince] = useState<string | null>(null)
@@ -305,6 +320,28 @@ export default function PdfUploadPage() {
   const [ingestDistrict, setIngestDistrict] = useState<string>('auto')
   const [ingestFolderName, setIngestFolderName] = useState<string>('')
   const [useAiFolderName, setUseAiFolderName] = useState<boolean>(true)
+
+  // PDF preview state for vault
+  const [vaultPdfPreview, setVaultPdfPreview] = useState<{ fileId: string; name: string } | null>(null)
+
+  // DB Stats state
+  type DbStatProvince = { province: string; notes: number; index_notes: number; districts: number; with_pdf: number; documents: number }
+  type DbStatsData = {
+    summary: { total_notes: number; index_notes: number; chunk_notes: number; provinces: number; source_files: number; with_pdf_link: number; last_updated: string | null }
+    by_province: DbStatProvince[]
+    recent_notes: { note_id: string; relative_path: string; title: string; province: string; district: string; is_index: boolean; chunk_index: number; file_id: string | null; updated: string }[]
+  }
+  const [dbStats, setDbStats] = useState<DbStatsData | null>(null)
+  const [dbStatsLoading, setDbStatsLoading] = useState(false)
+
+  const loadDbStats = async () => {
+    setDbStatsLoading(true)
+    try {
+      const resp = await fetch('/api/pdf/vault/db-stats')
+      if (resp.ok) setDbStats(await resp.json() as DbStatsData)
+    } catch { /* ignore */ }
+    setDbStatsLoading(false)
+  }
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
@@ -387,10 +424,13 @@ export default function PdfUploadPage() {
     setVaultBusy(false)
   }
 
+
+
   const vaultActions: VaultActions = {
     onEdit: handleVaultEdit,
     onDelete: handleVaultDelete,
     onRename: (node) => { setRenameNode(node); setRenameValue(node.name.replace('.md', '')) },
+    onPreviewPdf: (fileId, name) => setVaultPdfPreview({ fileId, name }),
   }
 
   useEffect(() => {
@@ -600,6 +640,10 @@ export default function PdfUploadPage() {
   }
 
   const openIngestConfig = (pdf: UploadedPdf) => {
+    // ถ้ามีข้อมูลใน DB แล้ว เตือนก่อน
+    if ((pdf.notes_count ?? 0) > 0) {
+      if (!confirm(`⚠️ "${pdf.name}" ถูก Ingest แล้ว (${pdf.notes_count} chunks ใน DB)\n\nถ้า Ingest ซ้ำจะเขียนทับข้อมูลเดิม\nต้องการดำเนินการต่อไหม?`)) return
+    }
     setIngestConfigPdf(pdf)
     setIngestProvince('auto')
     setIngestDistrict('auto')
@@ -722,59 +766,100 @@ export default function PdfUploadPage() {
                 <p>ยังไม่มีไฟล์ PDF</p>
               </div>
             ) : (
-              <div className="space-y-2">
+                  <div className="space-y-2">
                 {filteredPdfs.map((pdf) => (
                   <div
                     key={pdf.id}
                     onClick={() => { setSelectedPdf(pdf); setActiveTab('viewer') }}
-                    className={`group relative rounded-xl p-2.5 cursor-pointer transition-all duration-200 border ${
+                    className={`group relative rounded-xl p-3 cursor-pointer transition-all duration-200 border ${
                       selectedPdf?.id === pdf.id
                         ? 'bg-[#fff0e5] border-[#fbd5c8] shadow-sm shadow-[#f26522]/5'
-                        : 'bg-white border-[#fff0e5] hover:bg-[#fff0e5] hover:border-[#fbd5c8] shadow-sm'
+                        : 'bg-white border-[#fff0e5] hover:bg-[#fff8f4] hover:border-[#fbd5c8] shadow-sm'
                     }`}
                   >
-                    <div className="flex items-start gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-[#fff0e5] flex items-center justify-center flex-none">
+                    {/* Header row */}
+                    <div className="flex items-start gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-400 to-orange-400 flex items-center justify-center flex-none shadow-sm">
                         <span className="text-sm">📄</span>
                       </div>
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="text-xs font-medium text-gray-800 truncate leading-tight">{pdf.name}</p>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <StatusBadge status={pdf.ingestStatus} ingested={pdf.ingested} />
-                          {pdf.province && <ProvinceBadge province={pdf.province} district={pdf.district} />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-800 leading-tight line-clamp-2">{pdf.name}</p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="text-[10px] text-gray-400">{formatBytes(pdf.size)}</span>
+                          {pdf.uploadedAt > 0 && (
+                            <span className="text-[10px] text-gray-400">
+                              {new Date(pdf.uploadedAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' })}
+                            </span>
+                          )}
                         </div>
-                        {pdf.saved_at && (
-                          <p className="text-[9px] text-gray-400 truncate">📁 {pdf.saved_at}</p>
-                        )}
                       </div>
-                      {/* Delete button */}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(pdf) }}
-                        title="ลบไฟล์"
-                        className="flex-none opacity-0 group-hover:opacity-100 transition-opacity duration-150 w-6 h-6 rounded-md bg-red-500/20 hover:bg-red-500/50 border border-red-500/30 hover:border-red-500/60 flex items-center justify-center text-red-400 hover:text-red-200 text-[11px]"
-                      >
-                        🗑
-                      </button>
+                      {/* Actions */}
+                      <div className="flex-none flex items-center gap-1">
+                        {/* Preview button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedPdf(pdf)
+                            setActiveTab('viewer')
+                          }}
+                          title="ดู PDF"
+                          className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-md bg-blue-100 hover:bg-blue-200 border border-blue-200 flex items-center justify-center text-blue-500 text-[11px] transition-all"
+                        >👁️</button>
+                        {/* Delete button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(pdf) }}
+                          title="ลบไฟล์"
+                          className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-md bg-red-100 hover:bg-red-200 border border-red-200 flex items-center justify-center text-red-400 text-[11px] transition-all"
+                        >🗑</button>
+                      </div>
                     </div>
 
-                    {!pdf.ingested && pdf.ingestStatus !== 'running' && pdf.ingestStatus !== 'queued' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openIngestConfig(pdf) }}
-                        className="mt-2 w-full rounded-lg bg-[#f26522] hover:bg-[#e15518] text-white text-[10px] font-semibold py-1 transition-all shadow-sm shadow-[#f26522]/20"
-                      >
-                        ✨ Ingest → Obsidian
-                      </button>
+                    {/* Tags row */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <StatusBadge status={pdf.ingestStatus} ingested={pdf.ingested} />
+                      {pdf.province && <ProvinceBadge province={pdf.province} district={pdf.district} />}
+                      {pdf.location_confidence === 'manual' && (
+                        <span className="text-[9px] bg-purple-50 text-purple-500 border border-purple-200 px-1.5 py-0.5 rounded-full">📍 manual</span>
+                      )}
+                    </div>
+
+                    {/* Vault path */}
+                    {pdf.saved_at && (
+                      <p className="text-[9px] text-gray-400 truncate mt-1.5 flex items-center gap-1">
+                        <span>🗂️</span>
+                        <span className="truncate">{pdf.saved_at}</span>
+                      </p>
+                    )}
+
+                    {/* Action bar */}
+                    {pdf.ingestStatus !== 'running' && pdf.ingestStatus !== 'queued' && (
+                      pdf.ingested ? (
+                        <div className="mt-2 space-y-1">
+                          <div className="w-full rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-semibold py-1.5 text-center flex items-center justify-center gap-1">
+                            ✅ Ingest สำเร็จ {(pdf.notes_count ?? 0) > 0 && <span className="opacity-70">({pdf.notes_count} chunks)</span>}
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openIngestConfig(pdf) }}
+                            className="w-full rounded-lg bg-gray-100 hover:bg-amber-50 border border-gray-200 hover:border-amber-300 text-gray-500 hover:text-amber-700 text-[9px] font-medium py-1 transition-all flex items-center justify-center gap-1"
+                          >
+                            🔄 Ingest ซ้ำ (เขียนทับ)
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openIngestConfig(pdf) }}
+                          className="mt-2 w-full rounded-lg bg-[#f26522] hover:bg-[#e15518] text-white text-[10px] font-semibold py-1.5 transition-all shadow-sm"
+                        >
+                          ✨ Ingest → Obsidian
+                        </button>
+                      )
                     )}
                     {(pdf.ingestStatus === 'running' || pdf.ingestStatus === 'queued') && (
-                      <div className="mt-2 w-full rounded-lg bg-amber-100 border border-amber-200 text-amber-700 text-[10px] font-semibold py-1 text-center">
+                      <div className="mt-2 w-full rounded-lg bg-amber-100 border border-amber-200 text-amber-700 text-[10px] font-semibold py-1.5 text-center">
                         ⏳ กำลังประมวลผล...
                       </div>
                     )}
-                    {(pdf.ingestStatus === 'completed' || pdf.ingested) && (
-                      <div className="mt-2 w-full rounded-lg bg-emerald-100 border border-emerald-200 text-emerald-700 text-[10px] font-semibold py-1 text-center">
-                        ✅ Ingest สำเร็จแล้ว
-                      </div>
-                    )}
+
                   </div>
                 ))}
               </div>
@@ -818,7 +903,7 @@ export default function PdfUploadPage() {
           {/* Tab Content */}
           <div className="flex-1 min-h-0 overflow-hidden">
 
-            {/* PDF Viewer */}
+            {/* PDF Viewer — รองรับทั้ง PDF ที่อัปโหลดและ PDF จาก vault */}
             {activeTab === 'viewer' && (
               <div className="h-full flex flex-col">
                 {pdfUrl ? (
@@ -829,12 +914,32 @@ export default function PdfUploadPage() {
                     title={selectedPdf?.name}
                     style={{ background: 'white' }}
                   />
+                ) : vaultPdfPreview ? (
+                  // แสดง PDF จาก vault (MinIO) ผ่าน pdf/view endpoint
+                  <div className="h-full flex flex-col">
+                    <div className="flex-none flex items-center gap-2 px-4 py-2 bg-[#fff0e5] border-b border-[#fbd5c8]">
+                      <span className="text-sm">📄</span>
+                      <span className="text-xs font-semibold text-gray-700 truncate flex-1">{vaultPdfPreview.name}</span>
+                      <span className="text-[10px] text-[#f26522] font-medium bg-white border border-[#fbd5c8] px-2 py-0.5 rounded-full">PDF จาก Vault</span>
+                      <button
+                        onClick={() => setVaultPdfPreview(null)}
+                        className="text-gray-400 hover:text-gray-600 text-sm transition-colors"
+                      >✕</button>
+                    </div>
+                    <iframe
+                      key={vaultPdfPreview.fileId}
+                      src={`/api/pdf/view/${vaultPdfPreview.fileId}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`}
+                      className="flex-1 w-full border-0"
+                      title={vaultPdfPreview.name}
+                      style={{ background: 'white' }}
+                    />
+                  </div>
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-4">
                     <span className="text-5xl opacity-40">📄</span>
                     <div className="text-center">
                       <p className="text-base font-semibold text-gray-500">ยังไม่ได้เลือกไฟล์</p>
-                      <p className="text-sm text-gray-400 mt-1">เลือก PDF จากรายการทางซ้าย</p>
+                      <p className="text-sm text-gray-400 mt-1">เลือก PDF จากรายการทางซ้าย หรือกด 👁️ บน folder ใน Vault</p>
                     </div>
                     {/* Zone 10 Map Summary */}
                     <div className="mt-6 grid grid-cols-5 gap-2 max-w-lg">
@@ -962,80 +1067,258 @@ export default function PdfUploadPage() {
               </div>
             )}
 
-            {/* Vault Tree */}
+            {/* Vault Tree — split view: tree + PDF preview if vaultPdfPreview active */}
             {activeTab === 'vault' && (
-              <div className="h-full overflow-y-auto p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-sm font-bold text-gray-800">🗂️ Obsidian Vault — เขต 10</h2>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      musya knowlads · 5 จังหวัด (มีจริง {(() => {
-                        const stats = countActualDocsAndMd([...vaultData.zone10, ...vaultData.root_files])
-                        return `${stats.docs} เอกสาร, ${stats.md} ไฟล์ MD`
-                      })()})
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
+              <div className="h-full flex flex-col overflow-hidden">
+
+                {/* Sub-tab bar */}
+                <div className="flex-none flex items-center gap-1 px-4 pt-2 pb-0 border-b border-[#fff0e5] bg-[#fffaf7]">
+                  {[
+                    { key: 'tree', label: '🗂️ Vault Tree' },
+                    { key: 'dbstats', label: '🗄️ ตรวจสอบ DB' },
+                  ].map(st => (
                     <button
-                      onClick={() => setShowNewFileDialog(true)}
-                      className="px-3 py-1.5 rounded-lg bg-[#f26522] text-white text-xs font-medium hover:bg-[#e05510] transition-all shadow-sm"
+                      key={st.key}
+                      onClick={() => {
+                        setVaultSubTab(st.key as 'tree' | 'dbstats')
+                        if (st.key === 'dbstats') loadDbStats()
+                      }}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all ${
+                        vaultSubTab === st.key
+                          ? 'text-[#f26522] bg-white border border-[#fff0e5] border-b-white -mb-px'
+                          : 'text-gray-500 hover:text-[#f26522]'
+                      }`}
                     >
-                      + ไฟล์ใหม่
+                      {st.label}
                     </button>
-                    <button
-                      onClick={loadVaultData}
-                      disabled={vaultBusy}
-                      className="px-3 py-1.5 rounded-lg bg-white border border-[#fff0e5] hover:bg-[#fff0e5] text-xs text-gray-600 hover:text-[#f26522] transition-all shadow-sm disabled:opacity-50"
-                    >
-                      ↻ รีเฟรช
-                    </button>
-                  </div>
+                  ))}
                 </div>
 
-                {/* Province Cards */}
-                <div className="grid grid-cols-5 gap-2 mb-4">
-                {Object.entries(PROVINCE_COLORS).map(([prov, grad]) => {
-                    const provNode = vaultData.zone10.find(n => n.name === prov)
-                    const children = provNode?.children ?? []
-                    const stats = countActualDocsAndMd(children)
-                    return (
-                      <div key={prov} className="rounded-xl bg-white border border-[#fff0e5] p-2.5 text-center hover:bg-[#fff0e5] transition-all cursor-default shadow-sm">
-                        <div className={`w-8 h-8 mx-auto rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center text-sm mb-1.5 shadow-sm opacity-90`}>
-                          🏛️
-                        </div>
-                        <p className="text-[10px] font-bold text-gray-800 leading-tight">{prov}</p>
-                        <p className="text-[9px] text-gray-500 mt-0.5">{stats.docs} เอกสาร</p>
-                        <p className="text-[9px] text-gray-400">{stats.md} ไฟล์ MD</p>
+                {/* DB Stats panel */}
+                {vaultSubTab === 'dbstats' && (
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-sm font-bold text-gray-800">🗄️ ตรวจสอบข้อมูลใน Database</h2>
+                      <button
+                        onClick={loadDbStats}
+                        disabled={dbStatsLoading}
+                        className="px-3 py-1.5 rounded-lg bg-white border border-[#fff0e5] hover:bg-[#fff0e5] text-xs text-gray-600 transition-all shadow-sm disabled:opacity-50"
+                      >
+                        {dbStatsLoading ? '⏳ กำลังโหลด...' : '↻ รีเฟรช'}
+                      </button>
+                    </div>
+
+                    {!dbStats && !dbStatsLoading && (
+                      <div className="text-center py-10 text-gray-400 text-sm">คลิก รีเฟรช เพื่อโหลดข้อมูล</div>
+                    )}
+
+                    {dbStatsLoading && (
+                      <div className="text-center py-10 text-gray-400 text-sm">⏳ กำลังดึงข้อมูล...</div>
+                    )}
+
+                    {dbStats && !dbStatsLoading && (<>
+                      {/* Summary cards */}
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: 'Notes ทั้งหมด', value: dbStats.summary.total_notes, color: 'from-orange-400 to-amber-400', icon: '📝' },
+                          { label: 'INDEX notes', value: dbStats.summary.index_notes, color: 'from-blue-400 to-indigo-400', icon: '📌' },
+                          { label: 'Chunk notes', value: dbStats.summary.chunk_notes, color: 'from-emerald-400 to-teal-400', icon: '📄' },
+                          { label: 'จังหวัด', value: dbStats.summary.provinces, color: 'from-purple-400 to-pink-400', icon: '🏛️' },
+                          { label: 'เอกสาร (PDF)', value: dbStats.summary.source_files, color: 'from-rose-400 to-red-400', icon: '📑' },
+                          { label: 'มีลิงก์ PDF', value: dbStats.summary.with_pdf_link, color: 'from-cyan-400 to-sky-400', icon: '🔗' },
+                        ].map(c => (
+                          <div key={c.label} className="rounded-xl bg-white border border-[#fff0e5] p-3 shadow-sm">
+                            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${c.color} flex items-center justify-center text-sm mb-2`}>{c.icon}</div>
+                            <p className="text-xl font-bold text-gray-800">{Number(c.value).toLocaleString()}</p>
+                            <p className="text-[10px] text-gray-500 mt-0.5">{c.label}</p>
+                          </div>
+                        ))}
                       </div>
-                    )
-                  })}
-                </div>
 
-                {/* Tree */}
-                <div className="rounded-xl bg-white border border-[#fff0e5] p-2 shadow-sm">
-                  <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-[#fff0e5]">
-                    <span className="text-sm">🗂️</span>
-                    <span className="text-xs font-bold text-gray-700">เขต10</span>
+                      {dbStats.summary.last_updated && (
+                        <p className="text-[10px] text-gray-400 text-right">อัปเดตล่าสุด: {dbStats.summary.last_updated}</p>
+                      )}
+
+                      {/* Province breakdown */}
+                      <div className="rounded-xl bg-white border border-[#fff0e5] shadow-sm overflow-hidden">
+                        <div className="px-4 py-2.5 border-b border-[#fff0e5] bg-[#fff8f4]">
+                          <h3 className="text-xs font-bold text-gray-700">สถิติแยกตามจังหวัด</h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-[#fff0e5] bg-gray-50">
+                                {['จังหวัด', 'Notes', 'INDEX', 'Chunks', 'อำเภอ', 'เอกสาร', 'มี PDF'].map(h => (
+                                  <th key={h} className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {dbStats.by_province.map((p, i) => (
+                                <tr key={i} className="border-b border-[#fff0e5] hover:bg-[#fff8f4] transition-colors">
+                                  <td className="px-3 py-2 font-medium text-gray-800">{p.province}</td>
+                                  <td className="px-3 py-2 text-center">
+                                    <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">{p.notes}</span>
+                                  </td>
+                                  <td className="px-3 py-2 text-center text-blue-600 font-medium">{p.index_notes}</td>
+                                  <td className="px-3 py-2 text-center text-gray-500">{Number(p.notes) - Number(p.index_notes)}</td>
+                                  <td className="px-3 py-2 text-center text-gray-500">{p.districts || '—'}</td>
+                                  <td className="px-3 py-2 text-center text-emerald-600 font-medium">{p.documents}</td>
+                                  <td className="px-3 py-2 text-center">
+                                    {Number(p.with_pdf) > 0
+                                      ? <span className="text-cyan-600 font-medium">{p.with_pdf} 🔗</span>
+                                      : <span className="text-gray-300">—</span>
+                                    }
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Recent notes */}
+                      <div className="rounded-xl bg-white border border-[#fff0e5] shadow-sm overflow-hidden">
+                        <div className="px-4 py-2.5 border-b border-[#fff0e5] bg-[#fff8f4] flex items-center justify-between">
+                          <h3 className="text-xs font-bold text-gray-700">📋 Notes ล่าสุด (10 รายการ)</h3>
+                          <span className="text-[10px] text-gray-400">เรียงจากใหม่ → เก่า</span>
+                        </div>
+                        <div className="divide-y divide-[#fff0e5]">
+                          {dbStats.recent_notes.map((n, i) => (
+                            <div key={i} className="px-4 py-2.5 hover:bg-[#fff8f4] transition-colors">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className="text-[10px]">{n.is_index ? '📌' : '📄'}</span>
+                                    <span className="text-xs font-semibold text-gray-800 truncate">{n.title || n.relative_path.split('/').pop()}</span>
+                                    {n.file_id && <span className="flex-none text-[9px] bg-cyan-100 text-cyan-700 px-1.5 py-0.5 rounded-full">🔗 PDF</span>}
+                                  </div>
+                                  <p className="text-[10px] text-gray-400 truncate">{n.relative_path}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    {n.province && <span className="text-[10px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded">{n.province}</span>}
+                                    {n.district && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">{n.district}</span>}
+                                    <span className="text-[10px] bg-gray-50 text-gray-400 px-1.5 py-0.5 rounded">chunk {n.chunk_index}</span>
+                                  </div>
+                                </div>
+                                <span className="flex-none text-[10px] text-gray-400 whitespace-nowrap">{n.updated}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>)}
+                  </div>
+                )}
+
+                {/* Tree + PDF preview */}
+                {vaultSubTab === 'tree' && (
+                <div className="flex-1 overflow-hidden flex">
+                {/* Tree Panel */}
+                <div className={`${vaultPdfPreview ? 'w-64 flex-none border-r border-[#fff0e5]' : 'flex-1'} overflow-y-auto p-4 transition-all`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h2 className="text-sm font-bold text-gray-800">🗂️ Obsidian Vault — เขต 10</h2>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        musya knowlads · 5 จังหวัด (มีจริง {(() => {
+                          const stats = countActualDocsAndMd([...vaultData.zone10, ...vaultData.root_files])
+                          return `${stats.docs} เอกสาร, ${stats.md} ไฟล์ MD`
+                        })()})
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowNewFileDialog(true)}
+                        className="px-3 py-1.5 rounded-lg bg-[#f26522] text-white text-xs font-medium hover:bg-[#e05510] transition-all shadow-sm"
+                      >
+                        + ไฟล์ใหม่
+                      </button>
+                      <button
+                        onClick={loadVaultData}
+                        disabled={vaultBusy}
+                        className="px-3 py-1.5 rounded-lg bg-white border border-[#fff0e5] hover:bg-[#fff0e5] text-xs text-gray-600 hover:text-[#f26522] transition-all shadow-sm disabled:opacity-50"
+                      >
+                        ↻ รีเฟรช
+                      </button>
+                    </div>
                   </div>
 
-                  {vaultData.zone10.length === 0 ? (
-                    <p className="text-gray-400 text-xs px-3 py-4 text-center">ยังไม่มีไฟล์ใน vault</p>
-                  ) : (
-                    vaultData.zone10.map((node, i) => (
-                      <VaultTreeNode key={i} node={node} depth={0} actions={vaultActions} />
-                    ))
+
+                  {/* Province Cards — hide when PDF preview open to save space */}
+                  {!vaultPdfPreview && (
+                    <div className="grid grid-cols-5 gap-2 mb-4">
+                    {Object.entries(PROVINCE_COLORS).map(([prov, grad]) => {
+                        const provNode = vaultData.zone10.find(n => n.name === prov)
+                        const children = provNode?.children ?? []
+                        const stats = countActualDocsAndMd(children)
+                        return (
+                          <div key={prov} className="rounded-xl bg-white border border-[#fff0e5] p-2.5 text-center hover:bg-[#fff0e5] transition-all cursor-default shadow-sm">
+                            <div className={`w-8 h-8 mx-auto rounded-lg bg-gradient-to-br ${grad} flex items-center justify-center text-sm mb-1.5 shadow-sm opacity-90`}>
+                              🏛️
+                            </div>
+                            <p className="text-[10px] font-bold text-gray-800 leading-tight">{prov}</p>
+                            <p className="text-[9px] text-gray-500 mt-0.5">{stats.docs} เอกสาร</p>
+                            <p className="text-[9px] text-gray-400">{stats.md} ไฟล์ MD</p>
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
 
-                  {vaultData.root_files.length > 0 && (
-                    <>
-                      <div className="border-t border-[#fff0e5] my-2" />
-                      <p className="text-[10px] text-gray-400 px-2 mb-1">ไฟล์ที่ root (ไม่ระบุจังหวัด)</p>
-                      {vaultData.root_files.map((f, i) => (
-                        <VaultTreeNode key={i} node={f} depth={0} actions={vaultActions} />
-                      ))}
-                    </>
-                  )}
+                  {/* Tree */}
+                  <div className="rounded-xl bg-white border border-[#fff0e5] p-2 shadow-sm">
+                    <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-[#fff0e5]">
+                      <span className="text-sm">🗂️</span>
+                      <span className="text-xs font-bold text-gray-700">เขต10</span>
+                      <span className="ml-auto text-[10px] text-gray-400">กด 👁️ บน folder เพื่อดู PDF</span>
+                    </div>
+
+                    {vaultData.zone10.length === 0 ? (
+                      <p className="text-gray-400 text-xs px-3 py-4 text-center">ยังไม่มีไฟล์ใน vault</p>
+                    ) : (
+                      vaultData.zone10.map((node, i) => (
+                        <VaultTreeNode key={i} node={node} depth={0} actions={vaultActions} />
+                      ))
+                    )}
+
+                    {vaultData.root_files.length > 0 && (
+                      <>
+                        <div className="border-t border-[#fff0e5] my-2" />
+                        <p className="text-[10px] text-gray-400 px-2 mb-1">ไฟล์ที่ root (ไม่ระบุจังหวัด)</p>
+                        {vaultData.root_files.map((f, i) => (
+                          <VaultTreeNode key={i} node={f} depth={0} actions={vaultActions} />
+                        ))}
+                      </>
+                    )}
+                  </div>
                 </div>
+
+                {/* PDF Preview Panel */}
+                {vaultPdfPreview && (
+                  <div className="flex-1 min-w-0 flex flex-col bg-white">
+                    <div className="flex-none flex items-center gap-2 px-4 py-2 border-b border-[#fff0e5] bg-[#fff8f4]">
+                      <span className="text-sm">📄</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-gray-800 truncate">{vaultPdfPreview.name}</p>
+                        <p className="text-[10px] text-[#f26522]">PDF ต้นฉบับจาก MinIO</p>
+                      </div>
+                      <button
+                        onClick={() => { setVaultPdfPreview(null); setActiveTab('vault') }}
+                        className="flex-none w-6 h-6 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 text-xs transition-all"
+                        title="ปิด Preview"
+                      >✕</button>
+                    </div>
+                    <iframe
+                      key={vaultPdfPreview.fileId}
+                      src={`/api/pdf/view/${vaultPdfPreview.fileId}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
+                      className="flex-1 w-full border-0"
+                      title={vaultPdfPreview.name}
+                      style={{ background: '#f5f5f5' }}
+                    />
+                  </div>
+                )}
+                </div>
+                )}
               </div>
             )}
           </div>

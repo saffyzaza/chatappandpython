@@ -86,6 +86,14 @@ const TOOL_DEFS = [
         activeIconColor: "#0d9488",
         Icon: FiBook,
     },
+    {
+        id: "pubmed",
+        labelTh: "ค้นหา PubMed",
+        desc: "ค้นหางานวิจัยทางการแพทย์จาก PubMed (เฉพาะบทความ Free Full Text)",
+        bgColor: "#eff6ff", borderColor: "#93c5fd", textColor: "#1d4ed8",
+        activeIconColor: "#2563eb",
+        Icon: FiDatabase,
+    },
 ] as const;
 
 type ToolId = typeof TOOL_DEFS[number]["id"];
@@ -96,16 +104,18 @@ const TOOL_MODE_MAP: Record<ToolId, string> = {
     tavily:          "tavily",
     thaijo:          "thaijo",
     obsidian:        "obsidian",
+    pubmed:          "pubmed",
 };
 
 // เครื่องมือที่ "สร้างรายงาน" จะดึงข้อมูลอัตโนมัติ
-const REPORT_DATA_SOURCES: ToolId[] = ["stats", "obsidian", "thaijo", "tavily"];
+const REPORT_DATA_SOURCES: ToolId[] = ["stats", "obsidian", "thaijo", "tavily", "pubmed"];
 
 const DATA_LABELS: Partial<Record<ToolId, string>> = {
     thaijo:   "บทความวิจัย",
     obsidian: "คลังความรู้",
     stats:    "สถิติ",
     tavily:   "ค้นหา",
+    pubmed:   "PubMed",
 };
 
 const _emptySnapshot: never[] = [];
@@ -270,6 +280,9 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
 
         try {
             const effectiveMode = getEffectiveMode(effectiveTools, attachedFiles.length > 0);
+            // โหมด "สร้างรายงาน" — ผู้ใช้ต้องการเห็นเนื้อหาเต็มที่ช่องซ้าย (แชท) เท่านั้น
+            // ไม่สตรีมไปช่องขวา ("ข้อมูลพื้นฐาน") อีก
+            const isReportMode = effectiveMode === "report-gather";
 
             const apiBody = {
                 sessionId,
@@ -317,15 +330,17 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                     } catch { continue; }
 
                     if (event.type === "text_stream_start") {
-                        const dataTools = effectiveTools.filter(t => t !== "report");
-                        // โหมด "สร้างรายงาน" รวม 3 แหล่งข้อมูลเสมอ — ใช้ป้ายชื่อรวมที่อ่านง่ายแทน
-                        // การต่อชื่อเครื่องมือดิบ ๆ (เช่น "สถิติ + คลังความรู้ + บทความวิจัย")
-                        const _toolLabel = effectiveTools.includes("report")
-                            ? "ข้อมูลพื้นฐาน"
-                            : dataTools.length > 0
+                        if (isReportMode) {
+                            // report-gather → สตรีม "ข้อมูลพื้นฐาน" ไปช่องขวา + เปิด wizard
+                            // ให้ผู้ใช้กดสร้างรายงานฉบับจริงต่อจากข้อมูลที่รวบรวมมา
+                            startThaijoTextStream(true, "ข้อมูลพื้นฐาน");
+                        } else {
+                            const dataTools = effectiveTools.filter(t => t !== "report");
+                            const _toolLabel = dataTools.length > 0
                                 ? dataTools.map(t => DATA_LABELS[t] ?? t).join(" + ")
                                 : "ผลลัพธ์";
-                        startThaijoTextStream(effectiveTools.includes("report"), _toolLabel);
+                            startThaijoTextStream(false, _toolLabel);
+                        }
                     } else if (event.type === "text_chunk") {
                         appendThaijoTextChunk((event.text as string) ?? "");
                     } else if (event.type === "crew_plan") {
@@ -436,10 +451,10 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         }
 
                         clearAttachedFiles();
-                        // โหมด "สร้างรายงาน" — เนื้อหาเต็มแสดงทางขวาแล้ว (ผ่าน text_chunk)
-                        // ฝั่งซ้ายแสดงแค่ป้ายบอกทาง ไม่ต้องซ้ำเนื้อหาทั้งหมดอีกรอบ
-                        const leftPaneText = isReportGather
-                            ? "สร้างรายงานสรุปข้อมูลพื้นฐานเสร็จแล้ว — ดูรายละเอียดทั้งหมดได้ที่ช่อง \"ข้อมูลพื้นฐาน\" ด้านขวา →"
+                        // โหมด "สร้างรายงาน" — เนื้อหาเต็มสตรีมไปช่องขวา ("ข้อมูลพื้นฐาน") แล้ว
+                        // ช่องซ้ายแสดงแค่ป้ายชี้ทาง ไม่ต้องซ้ำเนื้อหาทั้งก้อนอีกรอบ
+                        const leftPaneText = isReportMode
+                            ? "รวบรวมข้อมูลพื้นฐานเสร็จแล้ว — ดูรายละเอียดและกดสร้างรายงานได้ที่ช่อง \"ข้อมูลพื้นฐาน\" ด้านขวา →"
                             : (event.message as string);
                         const completedState: ChatSessionState = {
                             ...getChatSessionState(sessionId),
