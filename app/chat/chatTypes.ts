@@ -32,6 +32,38 @@ export type ObsidianNoteRef = {
   district?: string;
 };
 
+// สถานะรายแหล่งข้อมูล ณ ตอนที่บันทึก — ใช้กู้คืน badge ใน RightPane หลัง reload
+export type ReportSourceSaved = {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "done" | "error";
+  message?: string;
+};
+
+// หัวข้อรายงานใน wizard ขั้นที่ 2 — ผู้ใช้ปรับแก้ (เลือก/ไม่เลือก, แก้ชื่อ/คำอธิบาย,
+// เพิ่ม/ลบ, จัดลำดับ) ได้ก่อนกดสร้างรายงานฉบับจริง
+export type WizardTopicSaved = { id: string; title: string; desc: string; checked: boolean };
+
+// ความคืบหน้าของ wizard ขั้นที่ 2 — บันทึกไว้เพื่อกู้คืนได้หลัง reload กลางทาง
+// (เดิมถ้า reload ระหว่างแก้ไขหัวข้อ ต้องเริ่ม gen หัวข้อใหม่ทั้งหมด เสียงานที่แก้ไว้)
+export type WizardProgressSaved = {
+  docType: string;
+  topics: WizardTopicSaved[];
+  notes: Record<string, string>;
+};
+
+// ข้อมูลดิบจากโหมด "สร้างรายงาน" (report-gather) — บันทึกลง DB พร้อมข้อความแชท
+// เพื่อกู้คืนเนื้อหา "ข้อมูลพื้นฐาน" ใน RightPane ได้หลัง reload หน้า (เดิมอยู่แค่ใน
+// memory ฝั่ง browser เท่านั้น พอ reload แล้วหายหมดต้องรวบรวมใหม่ทั้งหมด)
+export type ReportGatherData = {
+  combinedText: string;
+  articlesText: string;
+  articleCount: number;
+  query: string;
+  sources: ReportSourceSaved[];
+  wizardProgress?: WizardProgressSaved;
+};
+
 export type ChatSessionMessage = {
   id: string;
   role: ChatMessageRole;
@@ -41,6 +73,7 @@ export type ChatSessionMessage = {
   sourceFile?: SourceFile;
   notesReferenced?: ObsidianNoteRef[];
   followUps?: string[];
+  reportData?: ReportGatherData;
 };
 
 export type ChatSessionState = {

@@ -10,7 +10,9 @@ import { AgentPipelinePanel } from "../component/chat/AgentPipelinePanel";
 import { ChatInput } from "../component/chat/ChatInput";
 import { setDraft } from "./chatDraftStore";
 import { toggleDatabaseExplorer } from "./databaseExplorerStore";
-import { getThaijoReport, subscribeToThaijoReport } from "./thaijoStore";
+import { getThaijoReport, subscribeToThaijoReport, setReportBaseContent } from "./thaijoStore";
+import { restoreReportSources } from "./reportSourceStore";
+import { getPreGatherTopics, subscribeToPreGatherTopics } from "./preGatherTopicsStore";
 import type { ChatSessionState } from "./chatTypes";
 
 const PREVIEW_SESSION = createEmptyChatSessionState("preview-session");
@@ -42,6 +44,14 @@ export const LeftPane = () => {
   const isRunning = session.status === "running";
   const hasLivePipeline = isRunning && liveSteps && liveSteps.length > 0;
 
+  // true ระหว่างรอผู้ใช้เลือก/แก้ไขหัวข้อในช่องขวา ก่อนยิงไปรวบรวมข้อมูลจริง — ไม่ใช่
+  // การขาดการเชื่อมต่อ กันไม่ให้ recovery-timer ด้านล่างเข้าใจผิดว่าเน็ตหลุด
+  const awaitingTopicSelection = useSyncExternalStore(
+    subscribeToPreGatherTopics,
+    () => !!getPreGatherTopics(),
+    () => false,
+  );
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const hydratedSessionsRef = useRef<Set<string>>(new Set());
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -66,10 +76,10 @@ export const LeftPane = () => {
 
   // ── Recovery delay — wait 3s before showing retry UI ────────────────────
   useEffect(() => {
-    if (!isRunning || hasLivePipeline) { setRecoveryDelayPassed(false); return; }
+    if (!isRunning || hasLivePipeline || awaitingTopicSelection) { setRecoveryDelayPassed(false); return; }
     const t = setTimeout(() => setRecoveryDelayPassed(true), 3000);
     return () => clearTimeout(t);
-  }, [isRunning, hasLivePipeline]);
+  }, [isRunning, hasLivePipeline, awaitingTopicSelection]);
 
   // ── Poll DB every 5s when in recovery state ──────────────────────────────
   // Backend saves result to DB when pipeline finishes — even if SSE was cut
@@ -123,6 +133,32 @@ export const LeftPane = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages.length, liveSteps?.length]);
 
+  // ── กู้คืนเนื้อหา "ข้อมูลพื้นฐาน" (report-gather) ที่เคยรวบรวมไว้ ──────────────
+  // เดิมข้อมูลนี้อยู่แค่ใน memory ฝั่ง browser พอ reload แล้วหายหมด ต้องรวบรวมใหม่
+  // ทั้งชุด — ตอนนี้บันทึกแนบไปกับข้อความแชทใน DB แล้ว หาแมสเสจ AI ล่าสุดที่มี
+  // reportData แล้วเติมกลับเข้า RightPane store ให้พร้อมใช้ทันที
+  const restoreReportDataFromMessages = useCallback((messages: ChatSessionState["messages"], sid: string) => {
+    const lastReportMsg = [...messages].reverse().find((m) => m.reportData);
+    if (!lastReportMsg?.reportData) return;
+    const rd = lastReportMsg.reportData;
+    setReportBaseContent({
+      text: rd.combinedText,
+      label: "ข้อมูลพื้นฐาน",
+      query: rd.query,
+      articlesText: rd.articlesText,
+      articleCount: rd.articleCount,
+      wizardProgress: rd.wizardProgress,
+    });
+    restoreReportSources(rd.sources, rd.query, sid);
+    // ⚠️ ต้องหน่วงเป็น macrotask ไม่ใช่ยิง event ตรงนี้เลย — effect ของ LeftPane
+    // (ลูก) mount ก่อน effect ของ ChatPage (แม่ ที่ผูก listener "open-journal-report"
+    // ไว้ใน page.tsx) เสมอ ตามลำดับ mount แบบ children-ก่อน-parent ของ React ถ้ายิง
+    // แบบ sync ตรงนี้จะไปถึงก่อน listener ผูกเสร็จ แล้ว RightPane จะไม่เปิดอัตโนมัติ
+    // ทั้งที่ข้อมูลถูกกู้คืนเข้า store สำเร็จแล้วจริง ๆ (setTimeout 0 ดันไป macrotask
+    // ถัดไปซึ่งการ mount effect ทั้งหมดของ React จบไปแล้วแน่นอน)
+    setTimeout(() => window.dispatchEvent(new CustomEvent("open-journal-report")), 0);
+  }, []);
+
   useEffect(() => {
     if (!sessionId) {
       return;
@@ -132,8 +168,13 @@ export const LeftPane = () => {
       return;
     }
 
-    if (getChatSessionState(sessionId).messages.length > 0) {
+    // sessionStorage เก็บ messages ข้าม reload ได้อยู่แล้ว (ไม่ต้องดึงจาก DB ซ้ำ)
+    // แต่ RightPane store (reportBaseContent/reportSources) เป็น memory ล้วน ๆ
+    // หายทุกครั้งที่ reload — ต้องกู้คืนจาก messages ที่มีอยู่แล้วตรงนี้ด้วย
+    const cachedMessages = getChatSessionState(sessionId).messages;
+    if (cachedMessages.length > 0) {
       hydratedSessionsRef.current.add(sessionId);
+      restoreReportDataFromMessages(cachedMessages, sessionId);
       return;
     }
 
@@ -155,13 +196,14 @@ export const LeftPane = () => {
           ...payload.state,
           sessionId,
         });
+        restoreReportDataFromMessages(payload.state.messages, sessionId);
       } catch (error) {
         console.error("Hydrate chat history error:", error);
       }
     };
 
     void hydrateFromDatabase();
-  }, [sessionId]);
+  }, [sessionId, restoreReportDataFromMessages]);
 
   return (
     <div className="flex-1 h-full border-r border-gray-200 bg-white shrink-0 shadow-sm rounded-lg flex flex-col overflow-hidden">
@@ -343,8 +385,20 @@ export const LeftPane = () => {
               </div>
             )}
 
+            {/* ── กำลังรอผู้ใช้เลือกหัวข้อในช่องขวา (ไม่ใช่การขาดการเชื่อมต่อ) ── */}
+            {isRunning && awaitingTopicSelection && (
+              <div className="flex flex-col items-start w-full">
+                <div className="px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm border bg-[#f0faf3] border-[#aad5b8]">
+                  <div className="flex items-center gap-2 text-xs text-[#1a6b3c]">
+                    <span>📋</span>
+                    <span>เลือกหัวข้อที่ต้องการในช่อง &quot;ข้อมูลพื้นฐาน&quot; ด้านขวา แล้วกด &quot;ยิงไปหาข้อมูล&quot;</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── Recovery bubble (running but SSE disconnected — e.g. after refresh) ── */}
-            {isRunning && !hasLivePipeline && (
+            {isRunning && !hasLivePipeline && !awaitingTopicSelection && (
               <div className="flex flex-col items-start w-full">
                 <div className={`px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm border ${
                   recoveryDelayPassed

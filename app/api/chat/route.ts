@@ -92,6 +92,8 @@ type ChatBody = {
   sessionId?: string;
   prompt?: string;
   doc_type?: string;
+  retry_source?: string;
+  report_title?: string;
   tools?: string[];
   attached_files?: { id: string; name: string }[];
   [key: string]: unknown;
@@ -142,7 +144,7 @@ export async function POST(req: Request) {
       doc_type:       body.doc_type ?? "workplan",
     };
   } else {
-    // normal / stats / obsidian / multi → /api/analyze
+    // normal / stats / obsidian / multi / report-gather / report-gather-retry → /api/analyze
     upstreamUrl = `${PYTHON_API}/api/analyze`;
     upstreamBody = {
       sessionId: body.sessionId ?? "",
@@ -150,6 +152,13 @@ export async function POST(req: Request) {
       history:   body.history ?? [],
       mode,
       tools:     body.tools ?? [],
+      // ชนิดเอกสารที่เลือกไว้ล่วงหน้าตอนกดปุ่ม "สร้างรายงาน" (report-gather เท่านั้น) —
+      // backend echo กลับใน event "final" ให้ wizard ข้ามขั้นตอนเลือกประเภทเอกสาร
+      doc_type:  body.doc_type,
+      // แหล่งข้อมูลเดียวที่ต้องการลองใหม่ (report-gather-retry เท่านั้น)
+      retry_source: body.retry_source,
+      // ชื่อเรื่องสั้นๆ ที่ผู้ใช้พิมพ์จริง แยกจาก prompt ที่อาจถูกเสริมหัวข้อจนยาว (report-gather)
+      report_title: body.report_title,
     };
   }
 

@@ -1,5 +1,7 @@
 "use client";
 import { useState, useCallback, useRef, useEffect, useSyncExternalStore } from "react";
+import { useParams } from "next/navigation";
+import { saveWizardProgress } from "./wizardPersist";
 import {
   getThaijoReport,
   subscribeToThaijoReport,
@@ -9,10 +11,21 @@ import {
   getThaijoSearchState,
   subscribeToWizardOpen,
   subscribeToSearchReady,
+  getReportBaseContent,
+  subscribeToReportBaseContent,
+  setThaijoSearchState,
 } from "./thaijoStore";
 import type { ThaijoTextStreamDetail, ThaiJoReportState } from "./thaijoStore";
 import type { ThaiJoReportJson } from "./journal-template/buildJournalHtml";
+import {
+  getPreGatherTopics,
+  subscribeToPreGatherTopics,
+  confirmPreGatherTopics,
+  clearPreGatherTopics,
+} from "./preGatherTopicsStore";
+import { getReportReady, subscribeToReportReady, clearReportReady } from "./reportReadyStore";
 import { MarkdownContent } from "../component/chat/MarkdownContent";
+import { ReportSourceBadges } from "../component/chat/ReportSourceBadges";
 
 /** แปลง HTML chunk เป็นข้อความอ่านได้ */
 function htmlToLines(html: string): string {
@@ -56,6 +69,9 @@ function StreamText({ text, streaming }: { text: string; streaming: boolean }) {
 }
 
 export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false }: RightPaneProps) => {
+  const params = useParams<{ sessionId?: string }>();
+  const sessionId = typeof params?.sessionId === "string" ? params.sessionId : null;
+
   // ── HTML stream (legacy report) ───────────────────────────────────────────
   const [isHtmlStreaming, setIsHtmlStreaming] = useState(false);
   const [hasFirstChunk, setHasFirstChunk] = useState(false);
@@ -67,7 +83,7 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
   const [displayText, setDisplayText] = useState(""); // typewriter display
   const [isTextStreaming, setIsTextStreaming] = useState(false);
   const textContainerRef = useRef<HTMLDivElement>(null);
-  const generateReportRef = useRef<(docType: string) => Promise<void>>(() => Promise.resolve());
+  const generateReportRef = useRef<(docType: string, topicPlan?: string) => Promise<void>>(() => Promise.resolve());
 
   // ── View mode toggle (text ↔ html) ─────────────────────────────────────
   const [viewMode, setViewMode] = useState<"text" | "html">("text");
@@ -281,6 +297,96 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
   const [editDraft, setEditDraft] = useState({ title: "", desc: "" });
   const dragIdxRef = useRef<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // true ระหว่างขั้นตอนใหม่: เลือก/แก้ไขหัวข้อ "ก่อน" ยิงไปรวบรวมข้อมูลจริง (ต่างจาก
+  // wizardPhase="topics" ปกติที่ทำงาน "หลัง" มีข้อมูลจริงแล้ว)
+  const [isPreGatherMode, setIsPreGatherMode] = useState(false);
+
+  // ── ขั้นเลือกหัวข้อ "ก่อน" ยิงไปรวบรวมข้อมูลจริง ──────────────────────────────
+  // ChatInput เรียก /api/thaijo-topics ด้วย query อย่างเดียว (ยังไม่มีข้อมูลจริง) แล้ว
+  // เปิดหน้าจอนี้รอผู้ใช้เลือก/แก้ไข/ใส่หมายเหตุ ก่อนค่อยยืนยันให้ ChatInput ยิง gather จริง
+  const preGather = useSyncExternalStore(subscribeToPreGatherTopics, getPreGatherTopics, () => null);
+  useEffect(() => {
+    if (!preGather) return;
+    // ⚠️ ต้องล้างเนื้อหา/รายงานเก่าทิ้งด้วย ไม่งั้นถ้า RightPane ยังมีข้อมูล/รายงานจาก
+    // รอบก่อนหน้าค้างอยู่ (เช่น เคยสร้างรายงานสำเร็จไปแล้วรอบนึง) มันจะโผล่ปนอยู่เหนือ
+    // หน้าจอเลือกหัวข้อรอบใหม่ ทั้งที่ข้อมูลนั้นกำลังจะถูกยิงไปหาใหม่อยู่ดี ไม่มีประโยชน์
+    // ที่จะโชว์ของเก่าไว้ให้สับสน
+    setBufferText("");
+    setDisplayText("");
+    setThaijoReport(null);
+    clearReportReady(); // เผื่อรอบก่อนหน้ายังไม่ได้กด "เริ่มสร้างเอกสาร" ค้างไว้
+    setIsPreGatherMode(true);
+    setWizardDocType(preGather.docType);
+    setWizardTopics(preGather.topics);
+    setWizardNotes({});
+    setWizardPhase("topics");
+    setContentLabel("เลือกหัวข้อที่ต้องการ");
+    setWizardEnabled(true);
+    setViewMode("text");
+    window.dispatchEvent(new CustomEvent("open-journal-report"));
+  }, [preGather]);
+
+  const handleConfirmPreGatherTopics = useCallback(() => {
+    if (!preGather) return;
+    const selected = wizardTopics.filter((t) => t.checked);
+    const topicPlan = selected
+      .map((t) => `- ${t.title}${wizardNotes[t.id] ? `: ${wizardNotes[t.id]}` : ""}`)
+      .join("\n");
+    confirmPreGatherTopics({ query: preGather.query, docType: wizardDocType, topicPlan });
+    setIsPreGatherMode(false);
+    setWizardPhase(null);
+    clearPreGatherTopics();
+  }, [preGather, wizardTopics, wizardNotes, wizardDocType]);
+
+  // ── รวบรวมข้อมูลเสร็จแล้ว รอผู้ใช้ตรวจสอบก่อนค่อยกดเริ่มสร้างเอกสาร ──────────────
+  // เดิม auto-generate ทันทีที่ gather จบ — ตอนนี้แค่ "พร้อมให้กด" ผู้ใช้ต้องอ่าน
+  // "ข้อมูลพื้นฐาน" ที่รวบรวมมาก่อน ตรวจสอบว่าถูกต้อง แล้วค่อยกดปุ่มเองถึงเริ่ม generate จริง
+  const reportReady = useSyncExternalStore(subscribeToReportReady, getReportReady, () => null);
+  const handleStartGenerateFromReady = useCallback(() => {
+    if (!reportReady) return;
+    void generateReportRef.current(reportReady.docType, reportReady.topicPlan);
+    clearReportReady();
+  }, [reportReady]);
+
+  // ── กู้คืนเนื้อหา "ข้อมูลพื้นฐาน" จาก DB หลัง reload หน้า ──────────────────────
+  // ต่างจาก live streaming (event-only) — อันนี้เป็น pull-based store อ่านค่าได้
+  // ทุกเมื่อไม่ว่า RightPane จะ mount ก่อน/หลัง restore ก็ตาม
+  const reportBase = useSyncExternalStore(subscribeToReportBaseContent, getReportBaseContent, () => null);
+  useEffect(() => {
+    if (!reportBase || bufferText.length > 0 || isTextStreaming) return;
+    setBufferText(reportBase.text);
+    setDisplayText(reportBase.text); // แสดงทันที ไม่ต้อง typewriter ซ้ำของที่เคยอ่านแล้ว
+    setContentLabel(reportBase.label);
+    setWizardEnabled(true);
+    setViewMode("text");
+    setThaijoSearchState({
+      query: reportBase.query,
+      articlesText: reportBase.articlesText,
+      articleCount: reportBase.articleCount,
+    });
+    // ถ้าเคยแก้ไขหัวข้อ wizard ค้างไว้ (ขั้นที่ 2) ก่อน reload — กู้คืนตรงนั้นเลย
+    // แทนที่จะให้ผู้ใช้เริ่มเลือกประเภทเอกสาร + gen หัวข้อใหม่ทั้งหมด
+    if (reportBase.wizardProgress) {
+      setWizardDocType(reportBase.wizardProgress.docType);
+      setWizardTopics(reportBase.wizardProgress.topics);
+      setWizardNotes(reportBase.wizardProgress.notes);
+      setWizardPhase("topics");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportBase]);
+
+  // ── Autosave ความคืบหน้า wizard (หัวข้อที่เลือก/แก้ไข) แบบ debounce ─────────────
+  // กันไม่ให้เสียงานที่แก้ไปแล้วถ้า reload กลางทางก่อนกด "สร้างรายงาน"
+  const wizardSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (wizardPhase !== "topics" || !sessionId || wizardTopics.length === 0) return;
+    if (wizardSaveTimerRef.current) clearTimeout(wizardSaveTimerRef.current);
+    wizardSaveTimerRef.current = setTimeout(() => {
+      void saveWizardProgress(sessionId, { docType: wizardDocType, topics: wizardTopics, notes: wizardNotes });
+    }, 800);
+    return () => { if (wizardSaveTimerRef.current) clearTimeout(wizardSaveTimerRef.current); };
+  }, [wizardPhase, sessionId, wizardDocType, wizardTopics, wizardNotes]);
+
   const handleSelectDocType = useCallback(async (docType: string) => {
     const search = getThaijoSearchState();
     if (!search) return;
@@ -417,9 +523,14 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
   // Sync ref so event listener always has latest version
   generateReportRef.current = handleGenerateReport;
 
-  // Listen for external trigger (e.g. from chat bubble HTML button)
+  // Listen for external trigger (e.g. from chat bubble HTML button, or ChatInput
+  // auto-triggering right after report-gather finishes — หัวข้อเลือกไว้ล่วงหน้าแล้ว
+  // ผ่าน waitForTopicPlan จึงส่ง topicPlan มาด้วยเพื่อไม่ต้องถามซ้ำ)
   useEffect(() => {
-    const handler = () => { generateReportRef.current("policy"); };
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ docType?: string; topicPlan?: string }>).detail;
+      generateReportRef.current(detail?.docType ?? "policy", detail?.topicPlan ?? "");
+    };
     window.addEventListener("trigger-generate-html", handler);
     return () => window.removeEventListener("trigger-generate-html", handler);
   }, []);
@@ -455,9 +566,9 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
   const isTyping = displayText.length < bufferText.length;
   const showCursor = isTextStreaming || isTyping;
   const showTextView = bufferText.length > 0 || isTextStreaming;
-  const showActions = !showCursor && (bufferText.length > 0 || wizardDirectMode) && (wizardEnabled || wizardDirectMode) && !isHtmlStreaming && !isGenerating && !report;
+  const showActions = !showCursor && (bufferText.length > 0 || wizardDirectMode || isPreGatherMode) && (wizardEnabled || wizardDirectMode || isPreGatherMode) && !isHtmlStreaming && !isGenerating && !report;
   const showHtmlReport = !!report && !isHtmlStreaming && viewMode === "html";
-  const showTextSection = (showTextView || wizardDirectMode) && !isHtmlStreaming && (viewMode === "text" || isGenerating);
+  const showTextSection = (showTextView || wizardDirectMode || isPreGatherMode) && !isHtmlStreaming && (viewMode === "text" || isGenerating);
   const showEmpty = !showTextSection && !showHtmlReport && !isHtmlStreaming;
 
   return (
@@ -595,6 +706,9 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
         </div>
       </div>
 
+      {/* สถานะรายแหล่งข้อมูล — เฉพาะโหมด "สร้างรายงาน" (report-gather) */}
+      <ReportSourceBadges />
+
       {/* Content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
 
@@ -610,8 +724,24 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
               {/* Journal Report Wizard — แสดงเมื่อ streaming เสร็จแล้ว */}
               {showActions && (
                 <div className="mt-8 border-t border-[#e8f5ee] pt-6">
-                  {/* Step 1: เลือกประเภทรายงาน */}
-                  {(wizardPhase === null || wizardPhase === "type") && (
+                  {/* รวบรวมข้อมูลเสร็จแล้ว (หัวข้อเลือกไว้ล่วงหน้าแล้วตั้งแต่ก่อน gather) —
+                      ให้ผู้ใช้ตรวจสอบเนื้อหา "ข้อมูลพื้นฐาน" ด้านบนก่อน แล้วค่อยกดเริ่มสร้าง
+                      เอกสารฉบับเต็มเอง ไม่ auto-generate ทันที */}
+                  {reportReady ? (
+                    <div className="rounded-2xl border border-[#d4edda] bg-[#f0faf3] px-4 py-4">
+                      <p className="text-sm font-semibold text-[#1a6b3c] mb-1">รวบรวมข้อมูลพื้นฐานเสร็จแล้ว</p>
+                      <p className="text-xs text-gray-500 mb-3">
+                        กรุณาตรวจสอบเนื้อหาด้านบนให้ถูกต้องครบถ้วนก่อน แล้วกดปุ่มด้านล่างเพื่อเริ่มสร้างเอกสารฉบับเต็ม
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleStartGenerateFromReady}
+                        className="w-full rounded-2xl bg-[#1a6b3c] text-white py-2.5 text-sm font-semibold hover:bg-[#155c32] transition"
+                      >
+                        เริ่มสร้างเอกสาร →
+                      </button>
+                    </div>
+                  ) : (wizardPhase === null || wizardPhase === "type") && (
                     <>
                       <p className="text-sm font-semibold text-gray-700 mb-1">เลือกประเภทรายงาน</p>
                       {wizardDirectMode && !searchReady ? (
@@ -659,19 +789,28 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                   {/* Step 2: เลือกหัวข้อ */}
                   {wizardPhase === "topics" && (
                     <>
-                      {/* Header + ย้อนกลับ */}
+                      {/* Header + ย้อนกลับ (ซ่อนปุ่มย้อนกลับตอน pre-gather เพราะไม่มีขั้นเลือก
+                          ประเภทเอกสารให้ย้อนไป — เลือกไว้แล้วตั้งแต่ตอนกดปุ่มเครื่องมือ) */}
                       <div className="flex items-center gap-2 mb-4">
-                        <button
-                          type="button"
-                          onClick={() => setWizardPhase("type")}
-                          className="text-xs text-[#1a6b3c] hover:underline flex items-center gap-1"
-                        >
-                          ← ย้อนกลับ
-                        </button>
+                        {!isPreGatherMode && (
+                          <button
+                            type="button"
+                            onClick={() => setWizardPhase("type")}
+                            className="text-xs text-[#1a6b3c] hover:underline flex items-center gap-1"
+                          >
+                            ← ย้อนกลับ
+                          </button>
+                        )}
                         <span className="text-sm font-semibold text-gray-700">
                           {wizardDocType === "policy" ? "📋 สรุปรายงานนโยบาย" : wizardDocType === "plan" ? "📜 แผนยุทธศาสตร์" : "📅 แผนปฏิบัติงาน"}
                         </span>
                       </div>
+
+                      {isPreGatherMode && !isLoadingTopics && (
+                        <p className="text-xs text-gray-400 mb-3">
+                          AI เดาหัวข้อจากคำถามของคุณไว้ให้แล้ว — เลือก/แก้ไข/เพิ่มหมายเหตุตามต้องการ แล้วกดยิงไปรวบรวมข้อมูลจริง
+                        </p>
+                      )}
 
                       {isLoadingTopics ? (
                         <div className="flex items-center gap-2 text-sm text-[#1a6b3c] py-4">
@@ -816,8 +955,14 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                           </button>
                           <button
                             type="button"
-                            disabled={wizardTopics.every((t) => !t.checked)}
+                            // โหมดเลือกหัวข้อก่อนยิงหาข้อมูล (isPreGatherMode) ไม่บังคับต้องติ๊ก
+                            // หัวข้อไว้เลยสักอัน — ปล่อยผ่านได้ (fallback เป็นยิงด้วย prompt ดิบ)
+                            disabled={!isPreGatherMode && wizardTopics.every((t) => !t.checked)}
                             onClick={() => {
+                              if (isPreGatherMode) {
+                                handleConfirmPreGatherTopics();
+                                return;
+                              }
                               const selected = wizardTopics.filter((t) => t.checked);
                               const topicPlan = selected
                                 .map((t) => `- ${t.title}${wizardNotes[t.id] ? `: ${wizardNotes[t.id]}` : ""}`)
@@ -826,7 +971,7 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                             }}
                             className="w-full rounded-2xl bg-[#1a6b3c] text-white py-2.5 text-sm font-semibold hover:bg-[#155c32] disabled:opacity-40 transition"
                           >
-                            สร้างรายงาน →
+                            {isPreGatherMode ? "ยิงไปหาข้อมูล →" : "สร้างรายงาน →"}
                           </button>
                         </>
                       )}

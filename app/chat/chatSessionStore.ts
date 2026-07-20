@@ -56,6 +56,7 @@ export function createChatSessionMessage(
   sourceFile?: SourceFile,
   notesReferenced?: ObsidianNoteRef[],
   followUps?: string[],
+  reportData?: ChatSessionMessage["reportData"],
 ): ChatSessionMessage {
   return {
     id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -66,6 +67,7 @@ export function createChatSessionMessage(
     ...(sourceFile ? { sourceFile } : {}),
     ...(notesReferenced && notesReferenced.length > 0 ? { notesReferenced } : {}),
     ...(followUps && followUps.length > 0 ? { followUps } : {}),
+    ...(reportData ? { reportData } : {}),
   };
 }
 

@@ -38,7 +38,20 @@ import {
     finishThaijoTextStream,
     setThaijoSearchState,
 } from "../../chat/thaijoStore";
+import {
+    startReportSources,
+    setReportSourceStatus,
+    clearReportSources,
+    getReportSources,
+} from "../../chat/reportSourceStore";
+import type { ReportSourceStatus } from "../../chat/reportSourceStore";
 import type { ThaiJoReportJson } from "../../chat/journal-template/buildJournalHtml";
+import {
+    openPreGatherTopics,
+    subscribeToPreGatherConfirmOnce,
+} from "../../chat/preGatherTopicsStore";
+import type { PreGatherConfirmDetail } from "../../chat/preGatherTopicsStore";
+import { setReportReady } from "../../chat/reportReadyStore";
 
 type ChatInputProps = {
     onToggleDatabaseExplorer?: () => void;
@@ -98,6 +111,18 @@ const RESEARCH_SOURCE_LABELS: Record<ResearchSource, string> = {
     pubmed: "PubMed",
 };
 
+// "สร้างรายงาน" — เลือกชนิดเอกสารล่วงหน้าตอนเลือกเครื่องมือ แทนที่จะรอถามหลังรวบรวม
+// ข้อมูลเสร็จ (เดิม wizard จะถามทีหลัง ทำให้ผู้ใช้ต้องรอเพิ่มอีกรอบก่อนเริ่มสร้างหัวข้อ)
+type ReportDocType = "policy" | "plan" | "workplan";
+const REPORT_DOC_TYPES: { id: ReportDocType; label: string }[] = [
+    { id: "policy",   label: "สรุปนโยบาย (Policy Brief)" },
+    { id: "plan",     label: "แผนยุทธศาสตร์ (Strategic Plan)" },
+    { id: "workplan", label: "แผนปฏิบัติงาน (Work Plan)" },
+];
+const REPORT_DOC_TYPE_LABELS: Record<ReportDocType, string> = {
+    policy: "Policy Brief", plan: "Strategic Plan", workplan: "Work Plan",
+};
+
 const TOOL_MODE_MAP: Record<ToolId, string> = {
     stats:           "stats",
     report:          "report",
@@ -134,6 +159,8 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const [researchSources, setResearchSources] = useState<Set<ResearchSource>>(
         () => new Set(ALL_RESEARCH_SOURCES)
     );
+    // ชนิดเอกสารของเครื่องมือ "สร้างรายงาน" — เลือกล่วงหน้าก่อนกด ส่ง
+    const [reportDocType, setReportDocType] = useState<ReportDocType>("policy");
     const wrapperRef = useRef<HTMLDivElement>(null);
     const fileInputRef  = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
@@ -209,6 +236,34 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
         } catch (error) {
             console.error("Persist chat history error:", error);
         }
+    };
+
+    /** โหมด "สร้างรายงาน" ขั้นใหม่ — ให้ AI เดาหัวข้อจากคำถามอย่างเดียวก่อน (ไม่มีข้อมูล
+     * จริงรองรับ) แล้วเปิดหน้าจอให้ผู้ใช้เลือก/แก้ไข/ใส่หมายเหตุ ก่อนค่อยยิงไปรวบรวม
+     * ข้อมูลจริงจาก 5 แหล่ง — กันปัญหาเดิมที่ยิง prompt สั้นๆ ห้วนๆ ไปตรงๆ แล้วได้ผลลัพธ์
+     * ไม่ตรงจุดที่ต้องการ ค่อยมาเลือกหัวข้อทีหลังตอนข้อมูลมาแล้ว (สายเกินไป/เสีย API โดยเปล่าประโยชน์)
+     */
+    const waitForTopicPlan = (query: string, docType: string): Promise<PreGatherConfirmDetail> => {
+        return new Promise((resolve) => {
+            const unsubscribe = subscribeToPreGatherConfirmOnce((detail) => resolve(detail));
+            void (async () => {
+                let topics: { id: string; title: string; desc: string }[] = [];
+                try {
+                    const res = await fetch("/api/thaijo-topics", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ query, articles_text: "", doc_type: docType }),
+                    });
+                    const data = await res.json() as { topics?: { id: string; title: string; desc: string }[] };
+                    topics = data.topics ?? [];
+                } catch {
+                    // เน็ตมีปัญหา/backend ล่ม — เปิดหน้าจอเปล่าให้ผู้ใช้เพิ่มหัวข้อเองได้ ไม่ต้องบล็อกไว้
+                }
+                openPreGatherTopics(query, docType, topics.map((t) => ({ ...t, checked: true })));
+            })();
+            // เผื่อ component unmount ระหว่างรอ (เช่น ผู้ใช้เปลี่ยนหน้า) — เลิก subscribe กันหน่วยความจำรั่ว
+            abortControllerRef.current?.signal.addEventListener("abort", unsubscribe, { once: true });
+        });
     };
 
     useEffect(() => {
@@ -311,13 +366,32 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
             // ไม่สตรีมไปช่องขวา ("ข้อมูลพื้นฐาน") อีก
             const isReportMode = effectiveMode === "report-gather";
 
+            // ── ขั้นใหม่: เลือกหัวข้อ + ใส่หมายเหตุ "ก่อน" ยิงไปรวบรวมข้อมูลจริง ─────────
+            // แทนที่จะยิง prompt ดิบๆ ไปที่ 5 แหล่งตรงๆ (เสี่ยงได้ผลลัพธ์ไม่ตรงจุด) ให้ AI
+            // เดาหัวข้อจากคำถามอย่างเดียวก่อน แล้วรอผู้ใช้ยืนยัน/แก้ไข ก่อนค่อยเสริม prompt
+            // ด้วยหัวข้อที่เลือกแล้วค่อยยิงจริง — เสร็จแล้วก็สร้างรายงานต่อได้เลยไม่ต้องถามซ้ำ
+            let effectivePrompt = trimmedMessage;
+            let topicPlanForReport = "";
+            if (isReportMode) {
+                clearReportSources();
+                const confirmed = await waitForTopicPlan(trimmedMessage, reportDocType);
+                topicPlanForReport = confirmed.topicPlan;
+                effectivePrompt = confirmed.topicPlan
+                    ? `${trimmedMessage}\n\nโปรดเจาะลึกและรวบรวมข้อมูลตามหัวข้อต่อไปนี้:\n${confirmed.topicPlan}`
+                    : trimmedMessage;
+                startReportSources(effectivePrompt, sessionId);
+            } else {
+                clearReportSources();
+            }
+
             const apiBody = {
                 sessionId,
-                prompt: trimmedMessage,
+                prompt: effectivePrompt,
                 history: nextMessages,
                 mode: effectiveMode,
                 tools: effectiveTools,
                 attached_files: attachedFiles,
+                ...(isReportMode ? { doc_type: reportDocType, report_title: trimmedMessage } : {}),
             };
             const response = await fetch("/api/chat", {
                 method: "POST",
@@ -358,8 +432,10 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
 
                     if (event.type === "text_stream_start") {
                         if (isReportMode) {
-                            // report-gather → สตรีม "ข้อมูลพื้นฐาน" ไปช่องขวา + เปิด wizard
-                            // ให้ผู้ใช้กดสร้างรายงานฉบับจริงต่อจากข้อมูลที่รวบรวมมา
+                            // report-gather → สตรีม "ข้อมูลพื้นฐาน" ไปช่องขวา
+                            // ⚠️ ไม่ส่ง doc_type ตรงนี้แล้ว (ต่างจากเดิม) — ตอนนี้หัวข้อถูกเลือก
+                            // ไว้ล่วงหน้าก่อนยิง gather แล้ว (ดู waitForTopicPlan) ไม่ต้องให้
+                            // RightPane auto-regenerate หัวข้อซ้ำอีกรอบตอนข้อมูลมาถึง
                             startThaijoTextStream(true, "ข้อมูลพื้นฐาน");
                         } else {
                             const dataTools = effectiveTools.filter(t => t !== "report");
@@ -384,6 +460,13 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         appendThaijoTextChunk((event.text as string) ?? "");
                     } else if (event.type === "crew_plan") {
                         setPlannedAgents(sessionId, event.agents as { name: string; role: string }[]);
+                    } else if (event.type === "report_source_status") {
+                        setReportSourceStatus(
+                            event.source as string,
+                            event.status as ReportSourceStatus,
+                            event.label as string | undefined,
+                            event.message as string | undefined,
+                        );
                     } else if (event.type === "agent_start") {
                         const current = getStreamingSteps(sessionId) ?? [];
                         const newStep: AgentStep = {
@@ -460,6 +543,13 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                                 articleCount: (event.articleCount as number) ?? 0,
                             });
                         }
+
+                        // ── report-gather: หัวข้อถูกเลือกไว้ล่วงหน้าแล้ว (waitForTopicPlan)
+                        // พอข้อมูลรวบรวมเสร็จ ไม่ auto-generate ทันที — ให้ผู้ใช้ตรวจสอบ
+                        // "ข้อมูลพื้นฐาน" ที่รวบรวมมาก่อน แล้วกดปุ่มเองถึงจะเริ่มสร้าง HTML จริง
+                        if (isReportMode) {
+                            setReportReady({ docType: reportDocType, topicPlan: topicPlanForReport });
+                        }
                         // ดึง streaming steps ที่สะสมระหว่าง real-time ก่อน clear
                         const streamedSteps = getStreamingSteps(sessionId) ?? [];
                         clearStreamingState(sessionId);
@@ -495,6 +585,18 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         const leftPaneText = isReportMode
                             ? "รวบรวมข้อมูลพื้นฐานเสร็จแล้ว — ดูรายละเอียดและกดสร้างรายงานได้ที่ช่อง \"ข้อมูลพื้นฐาน\" ด้านขวา →"
                             : (event.message as string);
+
+                        // ── บันทึกข้อมูล report-gather ลง DB เพื่อกู้คืน RightPane ได้หลัง
+                        // reload หน้า (เดิมเนื้อหา + badge อยู่แค่ใน memory ฝั่ง browser
+                        // พอ reload แล้วหายหมด ต้องรวบรวมข้อมูลใหม่ทั้งชุด) ──────────────
+                        const reportData = isReportMode ? {
+                            combinedText: (event.textResult as string) ?? "",
+                            articlesText: (event.articlesText as string) ?? "",
+                            articleCount: (event.articleCount as number) ?? 0,
+                            query: trimmedMessage,
+                            sources: getReportSources() ?? [],
+                        } : undefined;
+
                         const completedState: ChatSessionState = {
                             ...getChatSessionState(sessionId),
                             sessionId,
@@ -502,7 +604,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                             error: undefined,
                             messages: [
                                 ...getChatSessionState(sessionId).messages,
-                                createChatSessionMessage("ai", leftPaneText, agentSteps, sourceFile),
+                                createChatSessionMessage("ai", leftPaneText, agentSteps, sourceFile, undefined, undefined, reportData),
                             ],
                             lastUserPrompt: trimmedMessage,
                         };
@@ -670,9 +772,11 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         const def = TOOL_DEFS.find(d => d.id === id);
                         if (!def) return null;
                         const { labelTh, bgColor, borderColor, textColor, Icon } = def;
-                        // "วิจัย" แสดง sub-source ที่เลือกต่อท้าย label
+                        // "วิจัย" แสดง sub-source ที่เลือกต่อท้าย label / "สร้างรายงาน" แสดงชนิดเอกสาร
                         const displayLabel = id === "thaijo"
                             ? `${labelTh} (${[...researchSources].map(s => RESEARCH_SOURCE_LABELS[s]).join(" + ")})`
+                            : id === "report"
+                            ? `${labelTh} (${REPORT_DOC_TYPE_LABELS[reportDocType]})`
                             : labelTh;
                         return (
                             <div
@@ -808,6 +912,34 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                                                     />
                                                     <span style={{ color: checked ? textColor : "#94a3b8" }}>
                                                         {RESEARCH_SOURCE_LABELS[src]}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                {/* "สร้างรายงาน" — เลือกชนิดเอกสารล่วงหน้า เพื่อข้ามขั้นตอนถามซ้ำใน wizard ทีหลัง */}
+                                {id === "report" && isActive && (
+                                    <div
+                                        className="ml-9 mr-2 mb-1 mt-0.5 flex flex-col gap-0.5 border-l-2 pl-2.5"
+                                        style={{ borderColor }}
+                                    >
+                                        {REPORT_DOC_TYPES.map(({ id: dt, label }) => {
+                                            const checked = reportDocType === dt;
+                                            return (
+                                                <label
+                                                    key={dt}
+                                                    className="flex items-center gap-2 px-1.5 py-1 rounded-md text-xs cursor-pointer hover:bg-gray-50"
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="reportDocType"
+                                                        checked={checked}
+                                                        onChange={() => setReportDocType(dt)}
+                                                        className="w-3.5 h-3.5 accent-[#f08c00] cursor-pointer"
+                                                    />
+                                                    <span style={{ color: checked ? textColor : "#94a3b8" }}>
+                                                        {label}
                                                     </span>
                                                 </label>
                                             );
