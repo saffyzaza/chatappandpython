@@ -2,6 +2,7 @@
 import { useState, useCallback, useRef, useEffect, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
 import { saveWizardProgress } from "./wizardPersist";
+import { addSavedReport } from "./reportSavePersist";
 import {
   getThaijoReport,
   subscribeToThaijoReport,
@@ -207,8 +208,8 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
   useEffect(() => {
     if (displayText.length >= bufferText.length) return;
     const id = setTimeout(() => {
-      setDisplayText(bufferText.slice(0, displayText.length + 8));
-    }, 16); // ~8 chars per 16ms ≈ 500 chars/sec
+      setDisplayText(bufferText.slice(0, displayText.length + 24));
+    }, 16); // ~24 chars per 16ms ≈ 1500 chars/sec (3x เดิม)
     return () => clearTimeout(id);
   }, [displayText, bufferText]);
 
@@ -305,6 +306,9 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
   // ChatInput เรียก /api/thaijo-topics ด้วย query อย่างเดียว (ยังไม่มีข้อมูลจริง) แล้ว
   // เปิดหน้าจอนี้รอผู้ใช้เลือก/แก้ไข/ใส่หมายเหตุ ก่อนค่อยยืนยันให้ ChatInput ยิง gather จริง
   const preGather = useSyncExternalStore(subscribeToPreGatherTopics, getPreGatherTopics, () => null);
+  // เก็บหัวข้อที่ AI วิเคราะห์ไปแล้วต่อประเภทเอกสาร (policy/plan/workplan) ไว้ในรอบ
+  // pre-gather เดียวกัน — สลับกลับไปประเภทที่เคยเลือกไม่ต้องยิง /api/thaijo-topics ซ้ำ
+  const preGatherTopicsCacheRef = useRef<Record<string, { topics: WizardTopic[]; notes: Record<string, string> }>>({});
   useEffect(() => {
     if (!preGather) return;
     // ⚠️ ต้องล้างเนื้อหา/รายงานเก่าทิ้งด้วย ไม่งั้นถ้า RightPane ยังมีข้อมูล/รายงานจาก
@@ -323,6 +327,9 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
     setContentLabel("เลือกหัวข้อที่ต้องการ");
     setWizardEnabled(true);
     setViewMode("text");
+    // เริ่มรอบ pre-gather ใหม่ (คำถามใหม่) — เคลียร์ cache ของรอบก่อนหน้าทิ้ง แล้วจำ
+    // ผลลัพธ์ประเภทเริ่มต้นไว้เป็นค่าแรกในแคช
+    preGatherTopicsCacheRef.current = { [preGather.docType]: { topics: preGather.topics, notes: {} } };
     window.dispatchEvent(new CustomEvent("open-journal-report"));
   }, [preGather]);
 
@@ -386,6 +393,43 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
     }, 800);
     return () => { if (wizardSaveTimerRef.current) clearTimeout(wizardSaveTimerRef.current); };
   }, [wizardPhase, sessionId, wizardDocType, wizardTopics, wizardNotes]);
+
+  // เปลี่ยนประเภทเอกสารตอน pre-gather (ก่อนมีข้อมูลจริง) — ต้องให้ AI คิดหัวข้อใหม่
+  // ตามประเภทที่เลือก เพราะหัวข้อที่เหมาะกับ "สรุปนโยบาย" ต่างจาก "แผนยุทธศาสตร์"/
+  // "แผนปฏิบัติงาน" (ต่างจาก handleSelectDocType ที่ใช้กับข้อมูลจริงหลัง gather เสร็จแล้ว)
+  const handleSelectPreGatherDocType = useCallback(async (docType: string) => {
+    if (!preGather || docType === wizardDocType) return;
+    // เก็บหัวข้อ/หมายเหตุของประเภทปัจจุบัน (รวมที่ผู้ใช้แก้ไขแล้ว) ไว้ก่อนสลับ เผื่อย้อน
+    // กลับมาใช้ประเภทนี้อีกจะได้ไม่ต้องให้ AI วิเคราะห์ใหม่
+    preGatherTopicsCacheRef.current[wizardDocType] = { topics: wizardTopics, notes: wizardNotes };
+
+    const cached = preGatherTopicsCacheRef.current[docType];
+    if (cached) {
+      setWizardDocType(docType);
+      setWizardTopics(cached.topics);
+      setWizardNotes(cached.notes);
+      return;
+    }
+
+    setWizardDocType(docType);
+    setIsLoadingTopics(true);
+    try {
+      const res = await fetch("/api/thaijo-topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: preGather.query, articles_text: "", doc_type: docType }),
+      });
+      const data = await res.json() as { topics?: WizardTopic[] };
+      const topics = (data.topics ?? []).map((t) => ({ ...t, checked: true }));
+      setWizardTopics(topics);
+      setWizardNotes({});
+      preGatherTopicsCacheRef.current[docType] = { topics, notes: {} };
+    } catch {
+      /* เหลือหัวข้อเดิมไว้ถ้าเรียกไม่สำเร็จ — ดีกว่าเคลียร์ทิ้งจนว่าง */
+    } finally {
+      setIsLoadingTopics(false);
+    }
+  }, [preGather, wizardDocType, wizardTopics, wizardNotes]);
 
   const handleSelectDocType = useCallback(async (docType: string) => {
     const search = getThaijoSearchState();
@@ -503,6 +547,10 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                 if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
                 setSavedReportId(d.id ?? null);
                 setSaveStatus("saved");
+                // ผูก id+ชื่อรายงานที่เพิ่งบันทึกไว้กับข้อความแชทนี้ — ให้ปุ่มเปิด
+                // รายงาน (ตั้งชื่อตามชื่อไฟล์จริง) ในแชทเก่ากดดูได้ทันทีแม้ reload
+                // หน้าไปแล้ว (ต่อท้ายเข้าลิสต์ ไม่ทับฉบับก่อนหน้าถ้ามีหลายฉบับ)
+                if (d.id && sessionId) void addSavedReport(sessionId, { id: d.id, title: reportTitle });
               })
               .catch((err: unknown) => {
                 console.error("[journal-save]", err);
@@ -789,21 +837,32 @@ export const RightPane = ({ onClose, onShowLeftPane, showLeftPaneButton = false 
                   {/* Step 2: เลือกหัวข้อ */}
                   {wizardPhase === "topics" && (
                     <>
-                      {/* Header + ย้อนกลับ (ซ่อนปุ่มย้อนกลับตอน pre-gather เพราะไม่มีขั้นเลือก
-                          ประเภทเอกสารให้ย้อนไป — เลือกไว้แล้วตั้งแต่ตอนกดปุ่มเครื่องมือ) */}
-                      <div className="flex items-center gap-2 mb-4">
-                        {!isPreGatherMode && (
+                      {/* เลือกประเภทรายงาน — ทำเป็น option ให้กดสลับได้ตรงนี้เลยเสมอ (ทั้งตอน
+                          pre-gather และหลัง gather เสร็จแล้ว) ไม่ต้องมีปุ่ม "ย้อนกลับ" ไปหน้า
+                          เลือกประเภทแยกต่างหากอีกที — คนละ handler กันเพราะ pre-gather ยังไม่มี
+                          articlesText จริง (ต้องยิง /api/thaijo-topics แบบ query อย่างเดียว)
+                          ส่วนหลัง gather มี articlesText แล้วจาก reportBase */}
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {[
+                          { docType: "policy",   emoji: "📋", label: "สรุปรายงานนโยบาย" },
+                          { docType: "plan",     emoji: "📜", label: "แผนยุทธศาสตร์" },
+                          { docType: "workplan", emoji: "📅", label: "แผนปฏิบัติงาน" },
+                        ].map(({ docType, emoji, label }) => (
                           <button
+                            key={docType}
                             type="button"
-                            onClick={() => setWizardPhase("type")}
-                            className="text-xs text-[#1a6b3c] hover:underline flex items-center gap-1"
+                            disabled={isLoadingTopics}
+                            onClick={() => void (isPreGatherMode ? handleSelectPreGatherDocType(docType) : handleSelectDocType(docType))}
+                            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                              wizardDocType === docType
+                                ? "border-[#1a6b3c] bg-[#1a6b3c] text-white"
+                                : "border-[#d4edda] bg-[#f0faf3] text-[#1a6b3c] hover:bg-[#e8f5ee]"
+                            }`}
                           >
-                            ← ย้อนกลับ
+                            <span>{emoji}</span>
+                            <span>{label}</span>
                           </button>
-                        )}
-                        <span className="text-sm font-semibold text-gray-700">
-                          {wizardDocType === "policy" ? "📋 สรุปรายงานนโยบาย" : wizardDocType === "plan" ? "📜 แผนยุทธศาสตร์" : "📅 แผนปฏิบัติงาน"}
-                        </span>
+                        ))}
                       </div>
 
                       {isPreGatherMode && !isLoadingTopics && (

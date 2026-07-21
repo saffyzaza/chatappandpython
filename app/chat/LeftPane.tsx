@@ -159,6 +159,45 @@ export const LeftPane = () => {
     setTimeout(() => window.dispatchEvent(new CustomEvent("open-journal-report")), 0);
   }, []);
 
+  // ── ตัดปุ่มรายงานที่ถูกลบไปแล้วออกจาก session ที่แคชไว้ ─────────────────────
+  // เดิม sessionStorage cache ของ session นี้ (หรือแม้แต่ messages_json ใน DB ที่
+  // ดึงมาก่อนหน้า) จะไม่มีทางรู้เลยว่ารายงานถูกลบไปจากหน้า /journal แล้ว (เป็นคนละ
+  // จุดที่ไม่เชื่อมกันแบบ real-time) ทำให้ปุ่มค้างอยู่ กดแล้วเงียบ (fetch คืน 404)
+  // — เช็คกับรายการรายงานที่ยังอยู่จริงทุกครั้งที่โหลด session แล้วตัดตัวที่หายไปออก
+  const pruneStaleSavedReports = useCallback(async (sid: string) => {
+    const hasSavedReports = getChatSessionState(sid).messages.some(
+      (m) => (m.reportData?.savedReports?.length ?? 0) > 0,
+    );
+    if (!hasSavedReports) return;
+
+    try {
+      const res = await fetch("/api/journal-reports");
+      if (!res.ok) return;
+      const payload = (await res.json()) as { reports?: { id: string }[] };
+      const validIds = new Set((payload.reports ?? []).map((r) => r.id));
+
+      const current = getChatSessionState(sid);
+      let changed = false;
+      const nextMessages = current.messages.map((msg) => {
+        const savedReports = msg.reportData?.savedReports;
+        if (!savedReports?.length) return msg;
+        const kept = savedReports.filter((r) => validIds.has(r.id));
+        if (kept.length === savedReports.length) return msg;
+        changed = true;
+        return { ...msg, reportData: { ...msg.reportData!, savedReports: kept } };
+      });
+      if (!changed) return;
+
+      const nextState = { ...current, messages: nextMessages };
+      saveChatSessionState(sid, nextState);
+      void fetch("/api/chat/history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sid, state: nextState }),
+      });
+    } catch { /* best-effort — ไม่ critical ต่อการแสดงผล ลองใหม่ได้ตอนโหลดครั้งหน้า */ }
+  }, []);
+
   useEffect(() => {
     if (!sessionId) {
       return;
@@ -175,6 +214,7 @@ export const LeftPane = () => {
     if (cachedMessages.length > 0) {
       hydratedSessionsRef.current.add(sessionId);
       restoreReportDataFromMessages(cachedMessages, sessionId);
+      void pruneStaleSavedReports(sessionId);
       return;
     }
 
@@ -197,13 +237,14 @@ export const LeftPane = () => {
           sessionId,
         });
         restoreReportDataFromMessages(payload.state.messages, sessionId);
+        void pruneStaleSavedReports(sessionId);
       } catch (error) {
         console.error("Hydrate chat history error:", error);
       }
     };
 
     void hydrateFromDatabase();
-  }, [sessionId, restoreReportDataFromMessages]);
+  }, [sessionId, restoreReportDataFromMessages, pruneStaleSavedReports]);
 
   return (
     <div className="flex-1 h-full border-r border-gray-200 bg-white shrink-0 shadow-sm rounded-lg flex flex-col overflow-hidden">
@@ -262,7 +303,7 @@ export const LeftPane = () => {
                       s.agentName === "ThaiJo Fetcher" || s.agentName === "Insight Analyst"
                     ) && (
                       <div className="mt-3 flex items-center gap-2 flex-wrap">
-                        {/* ปุ่ม 1: เปิด RightPane */}
+                        {/* ปุ่ม 1: เปิด RightPane โชว์ "ข้อมูลพื้นฐาน" ที่รวบรวมมา */}
                         <button
                           type="button"
                           onClick={() => window.dispatchEvent(new CustomEvent("open-journal-report"))}
@@ -271,22 +312,70 @@ export const LeftPane = () => {
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
-                          ดูผลลัพธ์ Journal Report
+                          ข้อมูลพื้นฐาน
                         </button>
-                        {/* ปุ่ม 2: เปิดหน้า HTML — แสดงเมื่อ AI สร้าง HTML เสร็จแล้วเท่านั้น */}
-                        {thaijoReport?.reportHtml && (
+                        {/* ปุ่มเปิดรายงาน — ตั้งชื่อปุ่มตามชื่อไฟล์รายงานจริง (ไม่ใช่ป้าย
+                        "เปิดหน้า HTML" ทั่วไป) หนึ่งปุ่มต่อหนึ่งฉบับที่บันทึกไว้แล้ว
+                        (msg.reportData.savedReports — อยู่ถาวรข้าม reload/session);
+                        ถ้ายังไม่มีฉบับไหนบันทึกเสร็จเลย (เพิ่งสร้างเสร็จหมาดๆ auto-save
+                        ยังไม่ทัน) ใช้ thaijoReport (store สดใน memory) เป็น fallback
+                        ชั่วคราวไปก่อน 1 ปุ่ม แล้วพอบันทึกเสร็จจะสลับมาใช้รายการถาวรเอง */}
+                        {(msg.reportData?.savedReports?.length ?? 0) > 0 ? (
+                          msg.reportData!.savedReports!.map((report) => (
+                            <button
+                              key={report.id}
+                              type="button"
+                              onClick={async () => {
+                                // เปิดแท็บเปล่าไว้ก่อน "ทันที" ในเฟรมเดียวกับ click event —
+                                // ต้องทำแบบ sync ห้ามมี await คั่นก่อนหน้า window.open ไม่งั้น
+                                // เบราว์เซอร์จะมองว่าไม่ได้มาจาก user gesture โดยตรงแล้วบล็อก
+                                // เป็น popup ทันที (fetch ข้างล่างสำเร็จ 200 OK ปกติ แต่แท็บไม่เปิด
+                                // ผู้ใช้จะรู้สึกว่า "กดไม่ได้" ทั้งที่จริงๆ กดติด แค่โดนบล็อก)
+                                const win = window.open("", "_blank");
+                                try {
+                                  const res = await fetch(`/api/journal-reports/${report.id}`);
+                                  const data = await res.json() as {
+                                    report?: { html_content?: string };
+                                    error?: string;
+                                  };
+                                  if (res.ok && data.report?.html_content) {
+                                    if (win) {
+                                      win.document.open();
+                                      win.document.write(data.report.html_content);
+                                      win.document.close();
+                                    } else {
+                                      const blob = new Blob([data.report.html_content], { type: "text/html;charset=utf-8" });
+                                      window.open(URL.createObjectURL(blob), "_blank");
+                                    }
+                                  } else {
+                                    win?.close();
+                                  }
+                                } catch {
+                                  win?.close();
+                                  /* กดใหม่อีกครั้งได้ถ้าโหลดไม่สำเร็จ */
+                                }
+                              }}
+                              className="flex items-center gap-1.5 rounded-xl border border-[#b8d4f5] bg-[#e8f0fe] px-3 py-1.5 text-xs font-semibold text-[#1a56a8] text-left transition hover:bg-[#d0e3fc] hover:border-[#1a56a8]"
+                            >
+                              <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                              {report.title}
+                            </button>
+                          ))
+                        ) : thaijoReport?.reportHtml && (
                           <button
                             type="button"
                             onClick={() => {
                               const blob = new Blob([thaijoReport.reportHtml], { type: "text/html;charset=utf-8" });
                               window.open(URL.createObjectURL(blob), "_blank");
                             }}
-                            className="flex items-center gap-1.5 rounded-xl border border-[#b8d4f5] bg-[#e8f0fe] px-3 py-1.5 text-xs font-semibold text-[#1a56a8] transition hover:bg-[#d0e3fc] hover:border-[#1a56a8]"
+                            className="flex items-center gap-1.5 rounded-xl border border-[#b8d4f5] bg-[#e8f0fe] px-3 py-1.5 text-xs font-semibold text-[#1a56a8] text-left transition hover:bg-[#d0e3fc] hover:border-[#1a56a8]"
                           >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                             </svg>
-                            เปิดหน้า HTML
+                            {thaijoReport.reportJson?.title || "เปิดหน้า HTML"}
                           </button>
                         )}
                       </div>
@@ -298,17 +387,34 @@ export const LeftPane = () => {
                           📋 อ้างอิง {msg.notesReferenced.length} notes จากคลังความรู้
                         </p>
                         <div className="flex flex-wrap gap-1.5">
-                          {msg.notesReferenced.map((n) => (
-                            <span
-                              key={n.note_id}
-                              className="inline-flex items-center gap-1 text-[10px] font-medium bg-[#e8f5ee] text-[#1a6b3c] border border-[#aad5b8] px-2 py-0.5 rounded-full"
-                            >
-                              {n.title || n.note_id}
-                              {n.province && (
-                                <span className="text-[#2e9e5b] opacity-70">· {n.province}</span>
-                              )}
-                            </span>
-                          ))}
+                          {msg.notesReferenced.map((n) =>
+                            n.pdf_url ? (
+                              <a
+                                key={n.note_id}
+                                href={n.pdf_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={`เปิดไฟล์ PDF: ${n.title || n.note_id}`}
+                                className="inline-flex items-center gap-1 text-[10px] font-medium bg-[#e8f5ee] text-[#1a6b3c] border border-[#aad5b8] px-2 py-0.5 rounded-full hover:bg-[#d8f0e4] hover:border-[#8fc9a3] transition-colors"
+                              >
+                                <span aria-hidden>📄</span>
+                                {n.title || n.note_id}
+                                {n.province && (
+                                  <span className="text-[#2e9e5b] opacity-70">· {n.province}</span>
+                                )}
+                              </a>
+                            ) : (
+                              <span
+                                key={n.note_id}
+                                className="inline-flex items-center gap-1 text-[10px] font-medium bg-[#e8f5ee] text-[#1a6b3c] border border-[#aad5b8] px-2 py-0.5 rounded-full"
+                              >
+                                {n.title || n.note_id}
+                                {n.province && (
+                                  <span className="text-[#2e9e5b] opacity-70">· {n.province}</span>
+                                )}
+                              </span>
+                            )
+                          )}
                         </div>
                         {msg.followUps && msg.followUps.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -380,18 +486,6 @@ export const LeftPane = () => {
                         />
                       ))}
                     </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── กำลังรอผู้ใช้เลือกหัวข้อในช่องขวา (ไม่ใช่การขาดการเชื่อมต่อ) ── */}
-            {isRunning && awaitingTopicSelection && (
-              <div className="flex flex-col items-start w-full">
-                <div className="px-4 py-3 rounded-2xl rounded-tl-sm max-w-[95%] shadow-sm border bg-[#f0faf3] border-[#aad5b8]">
-                  <div className="flex items-center gap-2 text-xs text-[#1a6b3c]">
-                    <span>📋</span>
-                    <span>เลือกหัวข้อที่ต้องการในช่อง &quot;ข้อมูลพื้นฐาน&quot; ด้านขวา แล้วกด &quot;ยิงไปหาข้อมูล&quot;</span>
                   </div>
                 </div>
               </div>

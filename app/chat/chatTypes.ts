@@ -30,6 +30,7 @@ export type ObsidianNoteRef = {
   title: string;
   province?: string;
   district?: string;
+  pdf_url?: string | null;
 };
 
 // สถานะรายแหล่งข้อมูล ณ ตอนที่บันทึก — ใช้กู้คืน badge ใน RightPane หลัง reload
@@ -52,6 +53,11 @@ export type WizardProgressSaved = {
   notes: Record<string, string>;
 };
 
+// รายงานที่ auto-save ลง journal_reports สำเร็จแล้ว 1 ฉบับ — เก็บทั้ง id (ไว้ fetch
+// html_content ตอนกดเปิด) และ title (ไว้ตั้งเป็นชื่อปุ่มโดยตรง แทนป้าย "เปิดหน้า HTML"
+// เดิมที่ไม่บอกว่าเป็นรายงานเรื่องอะไร)
+export type SavedReportRef = { id: string; title: string };
+
 // ข้อมูลดิบจากโหมด "สร้างรายงาน" (report-gather) — บันทึกลง DB พร้อมข้อความแชท
 // เพื่อกู้คืนเนื้อหา "ข้อมูลพื้นฐาน" ใน RightPane ได้หลัง reload หน้า (เดิมอยู่แค่ใน
 // memory ฝั่ง browser เท่านั้น พอ reload แล้วหายหมดต้องรวบรวมใหม่ทั้งหมด)
@@ -62,6 +68,10 @@ export type ReportGatherData = {
   query: string;
   sources: ReportSourceSaved[];
   wizardProgress?: WizardProgressSaved;
+  // รายงานทั้งหมดที่เคย auto-save ไว้จากข้อความนี้ (ปกติ 1 ฉบับ แต่ถ้าผู้ใช้แก้ไข
+  // หัวข้อแล้วกด "สร้างรายงาน →" ซ้ำ จะได้เอกสารฉบับใหม่เพิ่มเข้ามาต่อท้าย ไม่ทับของเดิม)
+  // — เก็บไว้ให้ขึ้นปุ่มชื่อรายงานให้กดเปิดได้ทันทีแม้ reload หน้าไปแล้ว
+  savedReports?: SavedReportRef[];
 };
 
 export type ChatSessionMessage = {

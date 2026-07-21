@@ -61,40 +61,40 @@ type ChatInputProps = {
 const TOOL_DEFS = [
     {
         id: "report",
-        labelTh: "สร้างรายงาน",
-        desc: "สร้างรายงานสรุปจากข้อมูลที่รวบรวม แสดงผลด้านขวา",
+        labelTh: "เเผนหรือนโยบาย",
+        desc: "สร้างเอกสารรายงาน นโยบาย เเผนปฎิบัติงาน เเละ เเผน ....",
         bgColor: "#fff9db", borderColor: "#ffe066", textColor: "#7c6600",
         activeIconColor: "#f08c00",
         Icon: FiClipboard,
     },
     {
         id: "stats",
-        labelTh: "สถิติ",
-        desc: "วิเคราะห์ข้อมูลสถิติสาธารณสุข และอุบัติเหตุทางถนน (Accident SQL Agent)",
+        labelTh: "ข้อมูลสถิติ",
+        desc: "ค้นหาข้อมูลจากระบบฐานข้อมูลเเละไฟล์ตารางข้อมูล",
         bgColor: "#f3f0ff", borderColor: "#c5b4f5", textColor: "#6741d9",
         activeIconColor: "#7c4ad9",
         Icon: FiActivity,
     },
     {
         id: "tavily",
-        labelTh: "ค้นหาทั่วไป",
-        desc: "ค้นหาข้อมูลจากอินเทอร์เน็ตด้วย Tavily Search",
+        labelTh: "ข้อมูลจากเว็บ",
+        desc: "ค้นหาข้อมูลผ่านระบบอินเตอร์เน็ต เว็บไชต์ที่เกี่ยวข้อง",
         bgColor: "#fff3ee", borderColor: "#f5c7ad", textColor: "#c85f35",
         activeIconColor: "#eb6f45",
         Icon: FiSearch,
     },
     {
         id: "thaijo",
-        labelTh: "วิจัย",
-        desc: "ค้นหาและสังเคราะห์บทความวิจัยจาก ThaiJo และ PubMed",
+        labelTh: "ฐานข้อมูลวิจัย",
+        desc: "ค้นหาบทความวิจันจาก ThaiJo เเละ Pubmed",
         bgColor: "#eef5ee", borderColor: "#aad5b8", textColor: "#1a6b3c",
         activeIconColor: "#2e9e5b",
         Icon: FiBookOpen,
     },
     {
         id: "obsidian",
-        labelTh: "คลังความรู้รายงาน",
-        desc: "คลังความรู้สุขภาพ เขตสุขภาพที่ 10 (อุบล ศรีสะเกษ ยโสธร ฯ)",
+        labelTh: "คลังรายงาน",
+        desc: "ค้นหาข้อมูลจากเอกสารรายงาน เขตสุขภาพที่ 10 เเละจังหวัดในเขต",
         bgColor: "#f0fdfa", borderColor: "#99f6e4", textColor: "#0f766e",
         activeIconColor: "#0d9488",
         Icon: FiBook,
@@ -145,6 +145,31 @@ const _emptySnapshot: never[] = [];
 const emptyAttachedFiles = () => _emptySnapshot;
 
 const MAX_TEXTAREA_HEIGHT = 160; // px — เกินนี้ให้ scroll แทนการขยายต่อ
+
+// ── Follow-up question sanitizer (defense-in-depth) ─────────────────────────────
+// Backend (obsidian_fullcontext.py) ตอนนี้บังคับ follow_ups ให้เป็น structured
+// JSON block อยู่แล้ว แต่ยังกรองซ้ำอีกชั้นตรงนี้ กันเผลอ: ถ้า LLM/parser ฝั่ง
+// backend หลุดจริง ๆ (bug ในอนาคต, หรือ backend เวอร์ชันเก่ายังไม่อัปเดต) จะได้
+// ไม่โผล่เป็นปุ่มพัง ๆ ให้ผู้ใช้เห็น (เช่น "**สรุปคำตอบ**" ที่เจอมาก่อนหน้านี้)
+function sanitizeFollowUps(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const item of raw) {
+        if (typeof item !== "string") continue;
+        const q = item.trim();
+        if (!q) continue;
+        if (!q.endsWith("?")) continue;      // ต้องเป็นประโยคคำถามเท่านั้น
+        if (q.includes("**")) continue;       // ห้ามมี markdown bold หลุดมา
+        if (q.includes("\n")) continue;       // ต้องเป็นบรรทัดเดียว
+        if (q.length <= 5 || q.length > 160) continue;
+        if (seen.has(q)) continue;
+        seen.add(q);
+        out.push(q);
+        if (out.length >= 3) break;
+    }
+    return out;
+}
 
 export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
     const router = useRouter();
@@ -372,10 +397,15 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
             // ด้วยหัวข้อที่เลือกแล้วค่อยยิงจริง — เสร็จแล้วก็สร้างรายงานต่อได้เลยไม่ต้องถามซ้ำ
             let effectivePrompt = trimmedMessage;
             let topicPlanForReport = "";
+            let effectiveDocType = reportDocType;
             if (isReportMode) {
                 clearReportSources();
                 const confirmed = await waitForTopicPlan(trimmedMessage, reportDocType);
                 topicPlanForReport = confirmed.topicPlan;
+                // ผู้ใช้เลือกประเภทเอกสารได้ใหม่ตอนหน้าจอ pre-gather (ดู RightPane wizardDocType
+                // pills) — ใช้ค่าที่เลือกจริงแทน reportDocType เดิมที่ล็อกไว้ตอนกดปุ่มเครื่องมือ
+                effectiveDocType = (confirmed.docType as ReportDocType) || reportDocType;
+                setReportDocType(effectiveDocType);
                 effectivePrompt = confirmed.topicPlan
                     ? `${trimmedMessage}\n\nโปรดเจาะลึกและรวบรวมข้อมูลตามหัวข้อต่อไปนี้:\n${confirmed.topicPlan}`
                     : trimmedMessage;
@@ -391,7 +421,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                 mode: effectiveMode,
                 tools: effectiveTools,
                 attached_files: attachedFiles,
-                ...(isReportMode ? { doc_type: reportDocType, report_title: trimmedMessage } : {}),
+                ...(isReportMode ? { doc_type: effectiveDocType, report_title: trimmedMessage } : {}),
             };
             const response = await fetch("/api/chat", {
                 method: "POST",
@@ -494,12 +524,31 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         const c = (event.html as string) ?? "";
                         thaijoHtmlBufferRef.current += c;
                         appendThaijoHtmlChunk(c);
+                    } else if (event.type === "obsidian_stream_start") {
+                        // เคลียร์ preview เก่า (ถ้ามี) ก่อนเริ่มสตรีมคำตอบใหม่เข้า step นี้
+                        const step = event.step as string;
+                        const current = getStreamingSteps(sessionId) ?? [];
+                        setStreamingSteps(sessionId, current.map((s) =>
+                            s.step === step ? { ...s, result: "" } : s,
+                        ));
+                    } else if (event.type === "obsidian_chunk") {
+                        // สตรีมคำตอบ Obsidian สด ๆ เข้า step ที่กำลัง "running" อยู่ — ผู้ใช้
+                        // เห็นคำตอบค่อย ๆ ก่อตัวในแผง AgentPipelinePanel แทนที่จะรอเงียบ ๆ
+                        // ~50-60s แล้วโผล่มาทีเดียว (ตัว "result" event ท้ายสุดยังเป็นความ
+                        // จริงหนึ่งเดียวเสมอ — ถ้า guard ฝั่ง backend ต้อง retry ก็จะเขียนทับ
+                        // preview นี้ด้วยคำตอบที่ผ่านการตรวจสอบแล้วอยู่ดี)
+                        const step = event.step as string;
+                        const text = (event.text as string) ?? "";
+                        const current = getStreamingSteps(sessionId) ?? [];
+                        setStreamingSteps(sessionId, current.map((s) =>
+                            s.step === step ? { ...s, result: (s.result ?? "") + text } : s,
+                        ));
                     } else if (event.type === "result") {
                         // ── Obsidian / Knowledge Vault pipeline result ───────────────
                         finishThaijoTextStream();
                         const obsContent = (event.content as string) ?? "";
                         const obsNotes = (event.notesReferenced as ObsidianNoteRef[]) ?? [];
-                        const obsFollowUps = (event.followUps as string[]) ?? [];
+                        const obsFollowUps = sanitizeFollowUps(event.followUps);
                         const obsAgentSteps = (getStreamingSteps(sessionId) ?? []).map((s) => ({
                             ...s,
                             status: "done" as const,
@@ -548,7 +597,7 @@ export const ChatInput = ({ onToggleDatabaseExplorer }: ChatInputProps) => {
                         // พอข้อมูลรวบรวมเสร็จ ไม่ auto-generate ทันที — ให้ผู้ใช้ตรวจสอบ
                         // "ข้อมูลพื้นฐาน" ที่รวบรวมมาก่อน แล้วกดปุ่มเองถึงจะเริ่มสร้าง HTML จริง
                         if (isReportMode) {
-                            setReportReady({ docType: reportDocType, topicPlan: topicPlanForReport });
+                            setReportReady({ docType: effectiveDocType, topicPlan: topicPlanForReport });
                         }
                         // ดึง streaming steps ที่สะสมระหว่าง real-time ก่อน clear
                         const streamedSteps = getStreamingSteps(sessionId) ?? [];

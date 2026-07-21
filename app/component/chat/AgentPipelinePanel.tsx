@@ -36,6 +36,11 @@ function StepRow({ step, isLast, isLive }: { step: AgentStep; isLast: boolean; i
   const thinkingText = step.thinking?.trim() ?? "";
   const preview = resultText.length > 240 ? resultText.slice(0, 240) + "…" : resultText;
   const hasContent = Boolean(thinkingText || resultText || step.code);
+  // ระหว่างที่ step ยัง "running" อยู่ (เช่น กำลังสตรีมคำตอบ Obsidian สด ๆ ผ่าน
+  // obsidian_chunk) ให้โชว์ preview ที่กำลังก่อตัวทันทีโดยไม่ต้องรอ "done" หรือ
+  // คลิกเปิดเอง — ลด perceived latency ของคำถามที่กินเวลานาน (~50-60s)
+  const showLiveRunningPreview = isLive && isRunning && Boolean(resultText);
+  const showDoneDetail = open && isDone;
 
   return (
     <div className={!isLast ? "mb-1" : ""}>
@@ -56,9 +61,9 @@ function StepRow({ step, isLast, isLive }: { step: AgentStep; isLast: boolean; i
         )}
       </button>
 
-      {open && isDone && (
+      {(showDoneDetail || showLiveRunningPreview) && (
         <div className="mt-1.5 mb-1 space-y-1.5">
-          {thinkingText && (
+          {thinkingText && showDoneDetail && (
             <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
               <p className="text-[10px] font-semibold text-amber-600 mb-1 flex items-center gap-1">
                 <span>💡</span> วิธีคิด
@@ -71,9 +76,10 @@ function StepRow({ step, isLast, isLive }: { step: AgentStep; isLast: boolean; i
           {preview && !step.code && (
             <p className="text-xs text-gray-500 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
               {preview}
+              {showLiveRunningPreview && <span className="animate-pulse">▍</span>}
             </p>
           )}
-          {step.code && (
+          {step.code && showDoneDetail && (
             <pre className="text-[10px] bg-gray-900 text-gray-100 rounded-lg p-2 overflow-x-auto max-h-44 overflow-y-auto leading-relaxed w-full max-w-160">
               {step.code}
             </pre>
